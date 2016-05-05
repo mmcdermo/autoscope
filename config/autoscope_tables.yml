@@ -1,0 +1,39 @@
+tables:
+  autoscope_unassigned:
+    columns:
+      table_name: varchar(128)
+      autoscope_objectfields: json
+    indices:
+      - table_name
+  autoscope_table_stats:
+    columns:
+      table_name: varchar(128)
+      insert_queries: varchar(128)
+      select_queries: varchar(128)
+      update_queries: varchar(128)
+    indices:
+      - table_name
+  autoscope_restriction_stats:
+    columns:
+      table_name: varchar(128)
+      restriction: varchar(128)
+      queries: bigint
+    indices:
+      - table_name
+      - restriction
+  autoscope_object_field_stats:
+    columns:
+      table_name: varchar(128)
+      object_field_name: varchar(128)
+      type: varchar(128)
+      occurrences: bigint
+    indices:
+      - table_name
+  autoscope_foreignkey_stats:
+    columns:
+      table_name: varchar(128)
+      object_field_name: varchar(128)
+      foreign_table_name: varchar(128)
+      occurrences: bigint
+    indices:
+      - table_name
