@@ -208,8 +208,6 @@ func (res PostgresRetrievalResult) Get() (map[string]interface{}, error) {
 
 	types := typeArrs()
 
-
-
 	//If the table doesn't yet exist, we're retrieving a result from
 	// autoscope_unassigned
 	tableCols := res.Table.Columns
@@ -617,35 +615,6 @@ func (ps *PostgresDB) setup() error{
 			return err
 		}
 	}
-
-	//Create the json update function if needed
-  _, err = ps.connection.Exec(`
-    CREATE OR REPLACE FUNCTION "json_object_set_keys"(
-  	  "json"          json,
-    	"keys_to_set"   TEXT[],
-    	"values_to_set" anyarray
-    )
-    RETURNS json
-    LANGUAGE sql
-    IMMUTABLE
-    STRICT
-    AS $function$
-    SELECT concat('{', string_agg(to_json("key") || ':' || "value", ','), '}')::json
-    FROM (SELECT *
-    	FROM json_each("json")
-    	WHERE "key" <> ALL ("keys_to_set")
-    	UNION ALL
-    	SELECT DISTINCT ON ("keys_to_set"["index"])
-    	"keys_to_set"["index"],
-    	CASE
-    	WHEN "values_to_set"["index"] IS NULL THEN 'null'::json
-    	ELSE to_json("values_to_set"["index"])
-    	END
-    	FROM generate_subscripts("keys_to_set", 1) AS "keys"("index")
-    	JOIN generate_subscripts("values_to_set", 1) AS "values"("index")
-    	USING ("index")) AS "fields"
-    $function$;
-  `)
   return err
 }
 
@@ -675,12 +644,13 @@ func (postgresDB *PostgresDB) Update(schema map[string]Table, prefixes map[strin
 	}
 
 	queryStr := "UPDATE " + escapeSQLIdent(query.Table) + " __root SET "
-	jsonKeyStr := ""
-	jsonValStr := ""
 	i := 1
 	colCount := 0
 
 	values := make([]interface{}, 0)
+	jsonValues := make(map[string]interface{})
+
+
 	for key, val := range query.Data {
 		if _, ok := schema[query.Table].Columns[key]; ok {
 			//Query normal column if it exists
@@ -689,25 +659,49 @@ func (postgresDB *PostgresDB) Update(schema map[string]Table, prefixes map[strin
 			values = append(values, val)
 			colCount += 1
 		} else {
-			//Otherwise, build our json update string
-			jsonKeyStr += jsonProp(key) + ", "
-			jsonValStr += "$" + strconv.Itoa(i) + ", "
-			values = append(values, val)
+			//Otherwise, build include the key/value pair in jsonValues
+			jsonValues[key] = val
 		}
 		i += 1
 	}
 
-	if colCount > 0 && len(jsonKeyStr) == 0 {
+	//Remove trailing commas if necessary
+	if i > 0 && len(jsonValues) == 0 {
 		queryStr = queryStr[0:len(queryStr) - 2]
 	}
-	if len(jsonKeyStr) > 0 {
-		jsonKeyStr = jsonKeyStr[0:len(jsonKeyStr) - 2]
-		jsonValStr = jsonValStr[0:len(jsonValStr) - 2]
-		queryStr += "autoscope_objectfields = "
-		queryStr += "(json_object_set_keys(autoscope_objectfields::json, "
-		queryStr += "array["+ jsonKeyStr +"],"
-		queryStr += "array["+ jsonValStr +"]))::jsonb"
-		fmt.Println(queryStr)
+
+	if len(jsonValues) > 0 {
+		// If we need to update the autoscope_objectfields portion of the row,
+		// we must first retrieve the whole row if we're using postgres < 9.5
+		// TODO: Implement postgres 9.5 efficient update
+		if postgresDB.version != "9.5" || true {
+			selectQuery := SelectQuery{
+				Selection: query.Selection,
+				Table: query.Table,
+			}
+			res, err := postgresDB.Select(schema, prefixes, selectQuery)
+			if err != nil { return nil, err }
+			b := res.Next()
+			if !b { return nil, errors.New("Failed to retrieve row we're attempting to update") }
+			resMap, err := res.Get()
+			if err != nil { return nil, err }
+
+			//Insert any old values that we're not overwriting into our
+			// map of object field names to values
+			for k, v := range resMap {
+				if _, ok := schema[query.Table].Columns[k]; !ok {
+					if _, ok := jsonValues[k]; !ok {
+						jsonValues[k] = v
+					}
+				}
+			}
+
+			s, err := json.Marshal(jsonValues)
+			if err != nil { return nil, err	}
+			queryStr += "autoscope_objectfields = "
+			queryStr += "'" + string(s) + "'"
+			fmt.Println(queryStr)
+		}
 	}
 
 	//Transform our attribute names appropriately where necessary
