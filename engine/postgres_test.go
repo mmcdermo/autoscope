@@ -441,11 +441,6 @@ func TestRelationalFiltering(t *testing.T){
 	for k, _ := range updateQuery.Data {
 		if resDict[k] != updateQuery.Data[k] {
 			if int(resDict[k].(float64)) != updateQuery.Data[k] {
-				t.Log("Mismatch for column "+k)
-				t.Log(resDict[k])
-				t.Log(updateQuery.Data[k])
-				t.Log(reflect.TypeOf(resDict[k]))
-				t.Log(reflect.TypeOf(updateQuery.Data[k]))
 				t.Fatal("Retrieved data does not match updated data")
 			}
 		}
