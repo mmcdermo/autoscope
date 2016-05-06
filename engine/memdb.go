@@ -3,7 +3,7 @@ package engine
 import (
 	"sync"
 	"errors"
-	_ "log"
+	"fmt"
 	_ "strconv"
 )
 
@@ -15,8 +15,9 @@ import (
 */
 
 type MemDB struct {
-	Tables map[string]MemTable
+	Tables map[string]*MemTable
 	Config *Config
+	TableLock sync.RWMutex
 }
 
 //Type representing a single row
@@ -36,7 +37,7 @@ type MemTable struct {
 
 func (memDB *MemDB) Connect(config *Config) error {
 	memDB.Config = config
-	memDB.Tables = make(map[string]MemTable, 0)
+	memDB.Tables = make(map[string]*MemTable, 0)
 	return nil
 }
 
@@ -75,8 +76,10 @@ func (memDB *MemDB) MigrationCreateTable(ct MigrationStepCreateTable) error {
 	if _, ok := memDB.Tables[ct.tableName]; ok {
 		return errors.New("memDB: Table already exists")
 	}
-	memDB.Tables[ct.tableName] = MemTable{
+	memDB.Tables[ct.tableName] = &MemTable{
 		Columns: ct.table.Columns,
+		Rows: make(map[int64]MemRow, 0),
+		LastIndex: 0,
 	}
 	return nil
 }
@@ -171,28 +174,29 @@ func (memDB *MemDB) Select(schema map[string]Table, prefixes map[string]Relation
 func (memDB *MemDB) Insert(schema map[string]Table, query InsertQuery) (ModificationResult, error) {
 	var r MemDBModificationResult
 
+	memDB.TableLock.Lock()
 	//Create the table if it doesn't exist
 	// This will make the output of .CurrentSchema() different from
 	// other backends, but it will massively simplify everything internally
 	if _, ok := memDB.Tables[query.Table]; !ok {
-		memDB.Tables[query.Table] = MemTable{
+		memDB.Tables[query.Table] = &MemTable{
 			Columns: make(map[string]string, 0),
 			Rows: make(map[int64]MemRow, 0),
 			LastIndex: 0,
 		}
+		fmt.Println(memDB.Tables[query.Table].Rows)
 	}
+	memDB.TableLock.Unlock()
 
 	table := memDB.Tables[query.Table]
-	table.Lock.Lock()
-	defer table.Lock.Unlock()
-
 	r.id = table.LastIndex
 	r.rowsAffected = 1
 	query.Data["id"] = table.LastIndex
-	table.Rows[table.LastIndex] = query.Data
-	table.LastIndex += 1
-	memDB.Tables[query.Table] = table
 
+	table.Lock.Lock()
+	memDB.Tables[query.Table].LastIndex += 1
+	memDB.Tables[query.Table].Rows[table.LastIndex] = query.Data
+	table.Lock.Unlock()
 	return r, nil
 }
 
