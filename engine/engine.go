@@ -104,6 +104,10 @@ func (e *Engine) Init(config *Config) (error){
 		return errors.New("Please specify a known database type (postgres, mysql, etc). Found: '"+config.DatabaseType+"'")
 	}
 
+	//Initialize local stats
+	e.LocalStats = make(map[string]TableQueryStats, 0)
+	e.GlobalStats = make(map[string]TableQueryStats, 0)
+
 	//Load default schema
 	defTables, err := AutoscopeTableSchemas()
 	if err != nil { return err }
@@ -259,10 +263,12 @@ func (e *Engine) loadGlobalStats() error {
 	log.Println("Loading stats")
 
 	//Load basic table stats
-	query := SelectQuery{ Table: "autoscope_table_stats" }
+	query := SelectQuery{ Table: "autoscope_table_stats", Selection: nil }
 	res, err := e.DB.Select(e.Schema, nil, query)
 	if err != nil { return err }
+	str := "_"
 	for res.Next() {
+		str += " _"
 		row, err := res.Get()
 		if err != nil { return err }
 		name := row["table_name"].(string)
@@ -360,7 +366,7 @@ func (e *Engine) flushStatsToDB() error {
 			updates := map[string]int64{
 				"queries": v,
 			}
-			err := e.IncrementColumns("autoscope_table_stats", restrictions, updates)
+			err := e.IncrementColumns("autoscope_restriction_stats", restrictions, updates)
 			if err != nil { return err }
 			stats.Restrictions[k] = 0
 			e.LocalStats[table] = stats
@@ -377,7 +383,7 @@ func (e *Engine) flushStatsToDB() error {
 				updates := map[string]int64{
 					"occurrences": v,
 				}
-				err := e.IncrementColumns("autoscope_table_stats", restrictions, updates)
+				err := e.IncrementColumns("autoscope_objectfield_stats", restrictions, updates)
 				if err != nil { return err }
 				stats.ObjectFieldCount[col][ty] = 0
 				e.LocalStats[table] = stats
@@ -395,7 +401,7 @@ func (e *Engine) flushStatsToDB() error {
 				updates := map[string]int64{
 					"occurrences": v,
 				}
-				err := e.IncrementColumns("autoscope_table_stats", restrictions, updates)
+				err := e.IncrementColumns("autoscope_foreignkey_stats", restrictions, updates)
 				if err != nil { return err }
 				stats.ForeignKeyCount[col][foreignTable] = 0
 				e.LocalStats[table] = stats

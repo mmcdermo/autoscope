@@ -7,7 +7,7 @@ import (
 	_ "strconv"
 )
 
-/* MemDB provides a simple, in-memory database
+/* MemDB provides a simple, thread-safe in-memory database
    At present, it is best suited for testing purposes only.
 
    Current performance issues:
@@ -38,6 +38,7 @@ type MemTable struct {
 func (memDB *MemDB) Connect(config *Config) error {
 	memDB.Config = config
 	memDB.Tables = make(map[string]*MemTable, 0)
+	fmt.Println("MemDB Initialized")
 	return nil
 }
 
@@ -158,13 +159,18 @@ func (memDB *MemDB) Select(schema map[string]Table, prefixes map[string]Relation
 		CurrentIndex: -1,
 		Rows: make([]MemRow, 0),
 	}
-
+	memDB.TableLock.RLock()
+	defer memDB.TableLock.RUnlock()
 	if _, ok := memDB.Tables[query.Table]; !ok {
 		return nil, errors.New("memDB: Table does not exist")
 	}
 
+	t := memDB.Tables[query.Table]
+	t.Lock.Lock()
+	defer t.Lock.Unlock()
+
 	for _, row := range memDB.Tables[query.Table].Rows {
-		if query.Selection == nil || memDB.evalFormula(prefixes, row, query.Selection){
+		if  query.Selection == nil || memDB.evalFormula(prefixes, row, query.Selection){
 			r.Rows = append(r.Rows, row)
 		}
 	}
@@ -175,6 +181,7 @@ func (memDB *MemDB) Insert(schema map[string]Table, query InsertQuery) (Modifica
 	var r MemDBModificationResult
 
 	memDB.TableLock.Lock()
+	defer memDB.TableLock.Unlock()
 	//Create the table if it doesn't exist
 	// This will make the output of .CurrentSchema() different from
 	// other backends, but it will massively simplify everything internally
@@ -184,9 +191,8 @@ func (memDB *MemDB) Insert(schema map[string]Table, query InsertQuery) (Modifica
 			Rows: make(map[int64]MemRow, 0),
 			LastIndex: 0,
 		}
-		fmt.Println(memDB.Tables[query.Table].Rows)
 	}
-	memDB.TableLock.Unlock()
+
 
 	table := memDB.Tables[query.Table]
 	r.id = table.LastIndex
@@ -194,8 +200,12 @@ func (memDB *MemDB) Insert(schema map[string]Table, query InsertQuery) (Modifica
 	query.Data["id"] = table.LastIndex
 
 	table.Lock.Lock()
-	memDB.Tables[query.Table].LastIndex += 1
-	memDB.Tables[query.Table].Rows[table.LastIndex] = query.Data
+	table.LastIndex += 1
+	table.Rows[table.LastIndex] = make(map[string]interface{})
+	for k, v := range query.Data {
+		table.Rows[table.LastIndex][k] = v
+		table.Rows[table.LastIndex][k] = v
+	}
 	table.Lock.Unlock()
 	return r, nil
 }
