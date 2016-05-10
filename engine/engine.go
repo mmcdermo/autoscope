@@ -290,7 +290,7 @@ func (e *Engine) loadGlobalStats() error {
 		name := row["table_name"].(string)
 		stats, ok := e.GlobalStats[name]
 		if !ok { stats = defStats() }
-		stats.Restrictions["restriction"] += row["queries"].(int64)
+		stats.Restrictions[row["restriction"].(string)] += row["queries"].(int64)
 		e.GlobalStats[name] = stats
 	}
 
@@ -323,10 +323,10 @@ func (e *Engine) loadGlobalStats() error {
 		stats, ok := e.GlobalStats[name]
 		if !ok { stats = defStats() }
 
-		ofMap, ok := stats.ObjectFieldCount[row["object_field_name"].(string)]
-		if !ok { ofMap = make(map[string]int64, 0) }
-		ofMap[row["foreign_table_name"].(string)] = row["occurrences"].(int64)
-		stats.ObjectFieldCount[row["object_field_name"].(string)] = ofMap
+		fkMap, ok := stats.ForeignKeyCount[row["object_field_name"].(string)]
+		if !ok { fkMap = make(map[string]int64, 0) }
+		fkMap[row["foreign_table_name"].(string)] = row["occurrences"].(int64)
+		stats.ForeignKeyCount[row["object_field_name"].(string)] = fkMap
 		e.GlobalStats[name] = stats
 	}
 
