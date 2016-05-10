@@ -295,7 +295,7 @@ func (e *Engine) loadGlobalStats() error {
 	}
 
 	//Load object field stats
-	query = SelectQuery{ Table: "autoscope_object_field_stats" }
+	query = SelectQuery{ Table: "autoscope_objectfield_stats" }
 	res, err = e.DB.Select(e.Schema, nil, query)
 	if err != nil { return err }
 	for res.Next() {

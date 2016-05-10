@@ -21,7 +21,7 @@ tables:
     indices:
       - table_name
       - restriction
-  autoscope_object_field_stats:
+  autoscope_objectfield_stats:
     columns:
       table_name: varchar(128)
       object_field_name: varchar(128)

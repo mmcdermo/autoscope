@@ -18,7 +18,6 @@ COPY ./docker-entrypoint.sh /docker-entrypoint.sh
 RUN chmod +x /docker-entrypoint.sh
 ENTRYPOINT ["/docker-entrypoint.sh"]
 
-COPY ./autoscope.go /go/src/autoscope/
 COPY ./config/ /go/src/autoscope/
 COPY ./server/ /go/src/autoscope/server/
 COPY ./engine/ /go/src/autoscope/engine/

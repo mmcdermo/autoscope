@@ -162,7 +162,7 @@ func (memDB *MemDB) Select(schema map[string]Table, prefixes map[string]Relation
 	memDB.TableLock.RLock()
 	defer memDB.TableLock.RUnlock()
 	if _, ok := memDB.Tables[query.Table]; !ok {
-		return nil, errors.New("memDB: Table does not exist")
+		return nil, errors.New("memDB: Table "+query.Table+" does not exist")
 	}
 
 	t := memDB.Tables[query.Table]
