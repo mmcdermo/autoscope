@@ -5,34 +5,6 @@ import (
 	"fmt"
 )
 
-func TestLoadFlushStats(t *testing.T){
-	var e Engine
-	config := Config{
-		DatabaseType: "memdb",
-	}
-	err := e.Init(&config)
-	if err != nil { t.Fatal(err.Error()) }
-
-	err = e.loadGlobalStats()
-	if err != nil { t.Fatal(err.Error()) }
-
-	err = e.flushStatsToDB()
-	if err != nil { t.Fatal(err.Error()) }
-
-	//Now, we'll modify some stats, write them out, and see if they're correct
-	stats := testStats()
-	e.LocalStats["magicTable"] = stats
-	err = e.flushStatsToDB()
-	if err != nil { t.Fatal(err.Error()) }
-
-	err = e.loadGlobalStats()
-	if err != nil { t.Fatal(err.Error()) }
-
-	//Compare our local stats to the global stats
-	if !cmpStats(testStats(), e.GlobalStats["magicTable"]) {
-		t.Fatal("Loaded stats don't match generated stats")
-	}
-}
 
 //Generate some test stats
 func testStats() TableQueryStats {
@@ -84,4 +56,76 @@ func cmpStats(ts1 TableQueryStats, ts2 TableQueryStats) bool {
 		}
 	}
 	return true
+}
+
+func TestLoadFlushStats(t *testing.T){
+	var e Engine
+	config := Config{
+		DatabaseType: "memdb",
+	}
+	err := e.Init(&config)
+	if err != nil { t.Fatal(err.Error()) }
+
+	err = e.loadGlobalStats()
+	if err != nil { t.Fatal(err.Error()) }
+
+	err = e.flushStatsToDB()
+	if err != nil { t.Fatal(err.Error()) }
+
+	//Now, we'll modify some stats, write them out, and see if they're correct
+	stats := testStats()
+	e.LocalStats["magicTable"] = stats
+	err = e.flushStatsToDB()
+	if err != nil { t.Fatal(err.Error()) }
+
+	err = e.loadGlobalStats()
+	if err != nil { t.Fatal(err.Error()) }
+
+	//Compare our local stats to the global stats
+	if !cmpStats(testStats(), e.GlobalStats["magicTable"]) {
+		t.Fatal("Loaded stats don't match generated stats")
+	}
+}
+
+func TestQueryStats(t *testing.T){
+	//Ensure that performing queries generates the correct
+	// changes in local stats
+	var e Engine
+	config := Config{
+		DatabaseType: "memdb",
+	}
+	err := e.Init(&config)
+	if err != nil { t.Fatal(err.Error()) }
+	
+
+	res, err := e.Insert(InsertQuery{
+		Table: "test_table0",
+		Data: map[string]interface{}{
+			"strcol": "strval0",
+		},
+	})
+	if err != nil { t.Fatal(err.Error()) }
+	
+	res, err = e.Insert(InsertQuery{
+		Table: "test_table1",
+		Data: map[string]interface{}{
+			"strcol": "strval",
+			"intcol": 4,
+			"fkcol": 0
+		},
+		ForeignKeys: map[string]string{
+			"fkcol": "test_table0"
+		},
+	})
+	if err != nil { t.Fatal(err.Error()) }
+
+	if e.LocalStats["test_table0"].InsertQueries != 1 {
+		t.Fatal("Incorrect stats")
+	}
+	if e.LocalStats["test_table1"].InsertQueries != 1 {
+		t.Fatal("Incorrect stats")
+	}
+	if e.LocalStats["test_table1"].ForeignKeyCount["fkcol"]["test_table0"] != 1 {
+		t.Fatal("Incorrect stats")
+	}
 }
