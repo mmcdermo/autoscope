@@ -11,6 +11,7 @@ import (
 
 var (
 	config *Config
+	configured = false
 )
 
 
@@ -25,24 +26,28 @@ func TestMain(m *testing.M) {
 	config_dir := os.Getenv("AUTOSCOPE_CONFIG_DIR")
 	contents, err := ioutil.ReadFile(config_dir+"/test_postgres.yml")
 	if err != nil {
-		log.Fatal("Failed to read config file.")
+		configured = false
+		log.Println("Failed to read config file.")
 	}
 	err = yaml.Unmarshal([]byte(contents), &config)
 	if err != nil {
-		log.Fatal("Failed to load yaml from config file.")
+		configured = false
+		log.Println("Failed to load yaml from config file.")
 	}
 
 	//Connect to the database
 	var ps PostgresDB
 	err = ps.Connect(config)
 	if err != nil {
-		log.Fatal(err.Error())
+		configured = false
+		log.Println(err.Error())
 	}
 
 	//Load the current schema
 	currentSchema, err := ps.CurrentSchema()
 	if err != nil {
-		log.Fatal(err.Error())
+		configured = false
+		log.Println(err.Error())
 	}
 
 	//Clear out any existing tables
@@ -50,7 +55,8 @@ func TestMain(m *testing.M) {
 		log.Println("Dropping table: "+n)
 		_, err := ps.connection.Exec("drop table "+n+"")
 		if err != nil {
-			log.Fatal(err.Error())
+			configured = false
+			log.Println(err.Error())
 		}
 	}
 
@@ -60,7 +66,8 @@ func TestMain(m *testing.M) {
 	//Generate new schema
 	newSchema, err := GenerateNewSchema(config, currentSchema, nil)
 	if err != nil {
-		log.Fatal(err.Error())
+		configured = false
+		log.Println(err.Error())
 	}
 
 	//Create migration to new schema
@@ -72,9 +79,13 @@ func TestMain(m *testing.M) {
 	//Perform migration
 	err = ps.PerformMigration(migration)
 	if err != nil {
-		log.Fatal(err)
+		configured = false
+		log.Println(err)
 	}
 
+	if !configured {
+		config = nil
+	}
 	os.Exit(m.Run())
 }
 
