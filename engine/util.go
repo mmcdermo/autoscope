@@ -24,6 +24,9 @@ func maxKey(m map[string]int64) string {
 
 //Helper function to increment the value at k1 -> k2 -> v
 func incrementCountMap(m map[string]map[string]int64, k1 string, k2 string) map[string]map[string]int64 {
+	if m == nil {
+		m = make(map[string]map[string]int64, 0)
+	}
 	if _, ok := m[k1]; !ok {
 		m[k1] = make(map[string]int64, 0)
 	}

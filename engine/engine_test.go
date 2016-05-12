@@ -111,21 +111,70 @@ func TestQueryStats(t *testing.T){
 		Data: map[string]interface{}{
 			"strcol": "strval",
 			"intcol": 4,
-			"fkcol": 0
+			"fkcol": 0,
 		},
 		ForeignKeys: map[string]string{
-			"fkcol": "test_table0"
+			"fkcol": "test_table0",
 		},
 	})
+	fmt.Println(res)
 	if err != nil { t.Fatal(err.Error()) }
 
-	if e.LocalStats["test_table0"].InsertQueries != 1 {
+	res, err = e.Update(UpdateQuery{
+		Table: "test_table1",
+		Selection: ValueSelection{
+			Attr: "strcol",
+			Op: "=",
+			Value: "strval",
+		},
+		Data: map[string]interface{}{ "intcol": 5 },
+	})
+	res2, err := e.Select(SelectQuery{
+		Table: "test_table1",
+		Selection: ValueSelection{
+			Attr: "strcol",
+			Op: "=",
+			Value: "strval",
+		},
+	})
+	/*
+	res2.Next()
+	dict, err := res2.Get()
+	if dict["intcol"] != 5 {
+		t.Fatal("Update failed")
+	}
+*/
+	fmt.Println(res2)
+	if err != nil { t.Fatal(err.Error()) }
+
+
+	err = e.flushStatsToDB()
+	if err != nil { t.Fatal(err.Error()) }
+	err = e.loadGlobalStats()
+	if err != nil { t.Fatal(err.Error()) }
+
+
+	if e.GlobalStats["test_table0"].InsertQueries != 1 {
+		fmt.Println("===================")
+		fmt.Println(e.LocalStats["test_table0"].InsertQueries)
 		t.Fatal("Incorrect stats")
 	}
-	if e.LocalStats["test_table1"].InsertQueries != 1 {
+	if e.GlobalStats["test_table1"].InsertQueries != 1 {
 		t.Fatal("Incorrect stats")
 	}
-	if e.LocalStats["test_table1"].ForeignKeyCount["fkcol"]["test_table0"] != 1 {
+	if e.GlobalStats["test_table1"].SelectQueries != 1 {
+		t.Fatal("Incorrect stats")
+	}
+	if e.GlobalStats["test_table1"].UpdateQueries != 1 {
+		t.Fatal("Incorrect stats")
+	}
+	if e.GlobalStats["test_table1"].ForeignKeyCount["fkcol"]["test_table0"] != 1 {
+		t.Fatal("Incorrect stats")
+	}
+	if e.GlobalStats["test_table1"].ObjectFieldCount["strcol"]["string"] != 1 {
+		t.Fatal("Incorrect stats")
+	}
+	if e.GlobalStats["test_table1"].ObjectFieldCount["intcol"]["int"] != 1 {
 		t.Fatal("Incorrect stats")
 	}
 }
