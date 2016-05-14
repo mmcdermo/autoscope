@@ -5,6 +5,21 @@ tables:
       autoscope_objectfields: json
     indices:
       - table_name
+  autoscope_users:
+    columns:
+      username: varchar(128)
+      passhash: varchar(128)
+      salt: bigint
+    indices:
+      - username
+  autoscope_user_sessions:
+    columns:
+      time: bigint
+      user_id: bigint
+      session_id: varchar(128)
+    indices:
+      - user_id
+      - time
   autoscope_table_stats:
     columns:
       table_name: varchar(128)

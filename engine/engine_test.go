@@ -129,6 +129,7 @@ func TestQueryStats(t *testing.T){
 		},
 		Data: map[string]interface{}{ "intcol": 5 },
 	})
+	
 	res2, err := e.Select(SelectQuery{
 		Table: "test_table1",
 		Selection: ValueSelection{
@@ -137,14 +138,14 @@ func TestQueryStats(t *testing.T){
 			Value: "strval",
 		},
 	})
-	/*
+	
 	res2.Next()
 	dict, err := res2.Get()
 	if dict["intcol"] != 5 {
 		t.Fatal("Update failed")
 	}
-*/
-	fmt.Println(res2)
+
+
 	if err != nil { t.Fatal(err.Error()) }
 
 
@@ -155,8 +156,6 @@ func TestQueryStats(t *testing.T){
 
 
 	if e.GlobalStats["test_table0"].InsertQueries != 1 {
-		fmt.Println("===================")
-		fmt.Println(e.LocalStats["test_table0"].InsertQueries)
 		t.Fatal("Incorrect stats")
 	}
 	if e.GlobalStats["test_table1"].InsertQueries != 1 {
@@ -174,7 +173,88 @@ func TestQueryStats(t *testing.T){
 	if e.GlobalStats["test_table1"].ObjectFieldCount["strcol"]["string"] != 1 {
 		t.Fatal("Incorrect stats")
 	}
-	if e.GlobalStats["test_table1"].ObjectFieldCount["intcol"]["int"] != 1 {
+	if e.GlobalStats["test_table1"].ObjectFieldCount["intcol"]["int"] != 2 {
 		t.Fatal("Incorrect stats")
+	}
+}
+
+
+func TestMigration(t *testing.T){
+	var e Engine
+	config := Config{
+		DatabaseType: "memdb",
+		AutoMigrate: false,
+		NewTableRowsThreshhold: 2,
+		NewFieldThreshhold: 3,
+	}
+	err := e.Init(&config)
+	if err != nil { t.Fatal(err.Error()) }
+
+	_, err = e.Insert(InsertQuery{
+		Table: "test_table0",
+		Data: map[string]interface{}{"strcol": "strval0",},
+	})
+	if err != nil { t.Fatal(err.Error()) }
+
+	steps, err := e.MigrationFromStats()
+	if err != nil { t.Fatal(err.Error()) }
+	if len(steps) > 0 { t.Fatal("Premature migration generation") }
+
+	
+	_, err = e.Insert(InsertQuery{
+		Table: "test_table0",
+		Data: map[string]interface{}{"strcol": "strval1",},
+	})
+	if err != nil { t.Fatal(err.Error()) }
+
+	//After two inserts, autoscope should be ready to create the table
+	steps, err = e.MigrationFromStats()
+	if err != nil { t.Fatal(err.Error()) }
+	if len(steps) != 1 { t.Fatal("Incorrect number of steps") }
+	if steps[0].(MigrationStepCreateTable).tableName != "test_table0" {
+		t.Fatal("Incorrect migration")
+	}
+	fmt.Println(steps)
+	
+	_, err = e.Insert(InsertQuery{
+		Table: "test_table0",
+		Data: map[string]interface{}{"strcol": "strval2",},
+	})
+	if err != nil { t.Fatal(err.Error()) }
+
+	//After three, it should be ready to create the object field, but
+	// the table doesn't yet exist so it shouldn't create a migration yet
+	steps, err = e.MigrationFromStats()
+	if err != nil { t.Fatal(err.Error()) }
+
+	if len(steps) != 1 { t.Fatal("Incorrect number of steps") }
+	if steps[0].(MigrationStepCreateTable).tableName != "test_table0" {
+		t.Fatal("Incorrect migration")
+	}
+
+	//Now we migrate the table creation
+	err = e.DB.PerformMigration(steps)
+	if err != nil { t.Fatal(err.Error()) }
+
+	//Reload the schema
+	err = e.LoadSchema()
+	if err != nil { t.Fatal(err.Error()) }
+	
+	//Now, the objectfield should be ready for creation
+	steps, err = e.MigrationFromStats()
+	if err != nil { t.Fatal(err.Error()) }
+	if len(steps) != 2 { t.Fatal("Incorrect number of steps") }
+	strColM := false
+	idColM := false
+	for _, step := range steps {
+		if step.(MigrationStepPromoteField).column == "strcol" {
+			strColM = true
+		}
+		if step.(MigrationStepPromoteField).column == "id" {
+			idColM = true
+		}
+	}
+	if strColM == false || idColM == false {
+		t.Fatal("Missing column migration")
 	}
 }

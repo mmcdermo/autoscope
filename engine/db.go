@@ -1,5 +1,9 @@
 package engine
 
+import (
+	"errors"
+)
+
 type AutoscopeDB interface {
 	Connect(*Config) error
 	PerformMigration([]MigrationStep) error
@@ -18,4 +22,11 @@ type RetrievalResult interface {
 type ModificationResult interface {
 	LastInsertId() (int64, error)
 	RowsAffected() (int64, error)
+}
+
+
+//Attempts to retrieve a single row from result, and fails if it cannot
+func GetRow (res RetrievalResult) (map[string]interface{}, error) {
+	if res.Next() == false { return nil, errors.New("No rows to retrieve")}
+	return res.Get()
 }

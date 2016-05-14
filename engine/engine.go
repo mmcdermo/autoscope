@@ -6,6 +6,7 @@ import (
 	"log"
 	"strings"
 	"sync"
+	"time"
 )
 
 /* TODO
@@ -33,6 +34,7 @@ type Config struct {
 	DatabaseType string `yaml:"database_type"`
 	NewTableRowsThreshhold int64 `yaml:"new_table_rows_threshhold"`
 	NewFieldThreshhold int64 `yaml:"new_field_threshhold"`
+	AutoMigrate bool `yaml:"auto_migrate"`
 }
 
 //Main data structure for an instance of the Autoscope Engine
@@ -101,7 +103,7 @@ func (e *Engine) Init(config *Config) (error){
 		if err != nil { return err }
 		break
 	default:
-		return errors.New("Please specify a known database type (postgres, mysql, etc). Found: '"+config.DatabaseType+"'")
+		return errors.New("Please specify a known database type (postgres, memdb). Found: '"+config.DatabaseType+"'")
 	}
 
 	//Initialize local stats
@@ -123,7 +125,87 @@ func (e *Engine) Init(config *Config) (error){
 	err = e.DB.PerformMigration(migration)
 	if err != nil { return err }
 
+	//Start automigration thread
+	go e.autoMigrate()
+	log.Println("initialized")
 	return nil
+}
+
+//Use current stats to produce any necessary migration steps
+// For now, this will include only object field promotion
+// and table creation
+func (e *Engine) MigrationFromStats() ([]MigrationStep, error){
+	var steps []MigrationStep
+	e.GlobalStatsLock.Lock()
+	defer e.GlobalStatsLock.Unlock()
+	
+	//Determine any object fields that need promotion
+	for tableName, stats := range e.GlobalStats {
+		if table, ok := e.Schema[tableName]; ok {
+			for field, tyCountMap := range stats.ObjectFieldCount {
+				//Determine which type this object field has been used most frequently
+				// and whether it's been used often enough to justify promotion
+				maxTy := maxKey(tyCountMap)
+				if maxTy != "" {
+					if tyCountMap[maxTy] >= e.Config.NewFieldThreshhold {
+						log.Println("Migrating field "+field+" of type "+maxTy)
+						steps = append(steps, MigrationStepPromoteField{
+							tableName: tableName,
+							table: table,
+							column: field,
+							columnType: maxTy,
+						})
+					}
+				}
+			}
+		}
+	}
+	
+	//Determine any tables that need creation
+	for table, stats := range e.GlobalStats {
+		if _, ok := e.Schema[table]; !ok {
+			if stats.InsertQueries >= e.Config.NewTableRowsThreshhold {
+				steps = append(steps, MigrationStepCreateTable{
+					tableName: table,
+					table: Table{Name: table},
+					//TODO: Efficiently include beginning columns
+				})
+			}
+		}
+	}
+	
+	return steps, nil
+}
+
+func (e *Engine) LoadSchema() error {
+	//Reload database schema
+	e.SchemaLock.Lock()
+	defer e.SchemaLock.Unlock()
+	schema, err := e.DB.CurrentSchema()
+	e.Schema = schema
+	return err
+}
+
+//Automatically create and perform migrations as stats update over time
+func (e *Engine) autoMigrate(){
+	//Reload schema directly, in case it's been changed by other nodes
+	e.LoadSchema()
+	//TODO: Inter-node lock
+	migration, err := e.MigrationFromStats()
+	if err != nil { log.Fatal(err.Error()) }
+	if len(migration) > 0 {
+		log.Println("Automatically performing migration...")
+		err = e.DB.PerformMigration(migration)
+		if err != nil { log.Fatal(err.Error()) }
+		e.LoadSchema()
+	}
+	time.Sleep(10 * time.Second)
+
+	//Refresh stats
+	e.flushStatsToDB()
+	e.loadGlobalStats()
+	
+	e.autoMigrate()
 }
 
 //Data structure to hold information about a prefix of a relational path
@@ -145,8 +227,6 @@ func (e *Engine) Select(query SelectQuery) (RetrievalResult, error){
 
 	if err != nil { return nil, err }
 	r, err := e.DB.Select(e.Schema, prefixes, query)
-
-	e.GlobalStatsLock.Lock()
 
 	//Update global stats
 	e.GlobalStatsLock.Lock()
@@ -188,7 +268,7 @@ func (e *Engine) Update(query UpdateQuery) (ModificationResult, error){
 	e.GlobalStatsLock.Lock()
 	stats := e.GlobalStats[query.Table]
 	//Update UpdateQueries stats
-	stats.InsertQueries += 1
+	stats.UpdateQueries += 1
 	//Update foreign key stats
 	for field, table := range query.ForeignKeys {
 		stats.ForeignKeyCount = incrementCountMap(stats.ForeignKeyCount, field, table)
@@ -537,6 +617,9 @@ func updateRestrictions(schema map[string]Table, stats map[string]TableQueryStat
 //Generates information about the prefixes of relational paths (venue__owner__name)
 // For example, venue__owner -> {Table: "people", FromTable: "venues", ...}
 func genPrefixes(schema map[string]Table, stats map[string]TableQueryStats, tableName string, selection Formula) (map[string]RelationPath, error) {
+	if selection == nil {
+		return make(map[string]RelationPath, 0), nil
+	}
 	parts, err := selection.toSQL()
 
 	if err != nil {

@@ -32,15 +32,18 @@ func SelectHandler(w http.ResponseWriter, r *http.Request){
 
 	var mapA map[string]interface{}
 	err := json.Unmarshal([]byte(queryStr), &mapA)
+	if err != nil {
+		report_api_error(w, err, "Unable to parse query object "+string(queryStr))
+		return
+	}
 
 	str, err := json.Marshal(mapA)
 
 	var sq engine.SelectQuery
 	err = engine.UnmarshalSelectQuery(&sq, []byte(queryStr))
 
-
 	if err != nil {
-		report_api_error(w, err, "Unable to parse query object "+string(str))
+		report_api_error(w, err, "Unable to parse query "+string(str))
 		return
 	}
 	res, err := engine.Select(sq)
@@ -62,6 +65,8 @@ func RESTHandler(w http.ResponseWriter, r *http.Request){
 		DeleteHandler(w, r)
 	} else {
 		//Assume GET as per http documentation
+		SelectHandler(w, r)
+		//TODO: Make SelectHandler accept args for REST
 	}
 }
 

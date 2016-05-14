@@ -1,5 +1,3 @@
 port: 4210
-fields:
-  -23
-  -456
-  -7
+new_table_rows_threshhold: 3
+new_field_threshhold: 3

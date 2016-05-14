@@ -75,7 +75,8 @@ func (memDB *MemDB) PerformMigration(steps []MigrationStep) error {
 
 func (memDB *MemDB) MigrationCreateTable(ct MigrationStepCreateTable) error {
 	if _, ok := memDB.Tables[ct.tableName]; ok {
-		return errors.New("memDB: Table already exists")
+		fmt.Println("memDB: Table already exists")
+		return nil 
 	}
 	memDB.Tables[ct.tableName] = &MemTable{
 		Columns: ct.table.Columns,
@@ -122,24 +123,63 @@ func (res MemDBModificationResult) RowsAffected() (int64, error){
 	return res.rowsAffected, nil
 }
 
+func performOp(v1 interface{}, v2 interface{}, op string) bool {
+	switch op {
+	case "=":
+		switch v1.(type) {
+		case string:
+			return v1.(string) == v2.(string)
+		case int64:
+			return v1.(int64) == v2.(int64)
+		case float64:
+			return v1.(float64) == v2.(float64)
+		case int:
+			return v1.(int) == v2.(int)
+		case float32:
+			return v1.(float32) == v2.(float32)
+		}
+	case "<":
+		switch v1.(type) {
+		case int64:
+			return v1.(int64) < v2.(int64)
+		case float64:
+			return v1.(float64) < v2.(float64)
+		case int:
+			return v1.(int) < v2.(int)
+		case float32:
+			return v1.(float32) < v2.(float32)
+		}
+	case ">":
+		switch v1.(type) {
+		case int64:
+			return v1.(int64) > v2.(int64)
+		case float64:
+			return v1.(float64) > v2.(float64)
+		case int:
+			return v1.(int) > v2.(int)
+		case float32:
+			return v1.(float32) > v2.(float32)
+		}
+	}
+	fmt.Println("MEMDB ERROR: Type not found")
+	return false
+}
 //Recursively evaluate a restriction formula for a given row
 //TODO: Function correctly for relational queries (venue__owner)
 func (memDB *MemDB) evalFormula(prefixes map[string]RelationPath, row MemRow, formula Formula) bool {
 	switch formula.(type){
 	case AttrSelection:
-		if attrA, ok := row[formula.(AttrSelection).AttrA]; ok {
-			if attrB, ok := row[formula.(AttrSelection).AttrB]; ok {
-				if attrA == attrB {
-					return true
-				}
+		as := formula.(AttrSelection)
+		if attrA, ok := row[as.AttrA]; ok {
+			if attrB, ok := row[as.AttrB]; ok {
+				return performOp(attrA, attrB, as.Op)
 			}
 		}
 		return false
 	case ValueSelection:
-		if attr, ok := row[formula.(ValueSelection).Attr]; ok {
-			if attr == formula.(ValueSelection).Value {
-				return true
-			}
+		vs := formula.(ValueSelection)
+		if attr, ok := row[vs.Attr]; ok {
+			return performOp(attr, vs.Value, vs.Op)
 		}
 		return false
 	case Or:
@@ -200,13 +240,24 @@ func (memDB *MemDB) Insert(schema map[string]Table, query InsertQuery) (Modifica
 	query.Data["id"] = table.LastIndex
 
 	table.Lock.Lock()
+	defer table.Lock.Unlock()
 	table.LastIndex += 1
 	table.Rows[table.LastIndex] = make(map[string]interface{})
 	for k, v := range query.Data {
-		table.Rows[table.LastIndex][k] = v
-		table.Rows[table.LastIndex][k] = v
+		//TODO: Correctly convert all other types, to ensure
+		// a consistent interface across engine backends
+		switch v.(type){
+		case int32:
+			table.Rows[table.LastIndex][k] = int64(v.(int32))
+			break
+		case int:
+			table.Rows[table.LastIndex][k] = int64(v.(int))
+			break
+		default:
+			table.Rows[table.LastIndex][k] = v
+		}
 	}
-	table.Lock.Unlock()
+
 	return r, nil
 }
 

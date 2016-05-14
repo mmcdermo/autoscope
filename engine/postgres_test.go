@@ -28,11 +28,15 @@ func TestMain(m *testing.M) {
 	if err != nil {
 		configured = false
 		log.Println("Failed to read config file.")
+		os.Exit(m.Run())
+		return
 	}
 	err = yaml.Unmarshal([]byte(contents), &config)
 	if err != nil {
 		configured = false
 		log.Println("Failed to load yaml from config file.")
+		os.Exit(m.Run())
+		return
 	}
 
 	//Connect to the database
@@ -41,6 +45,8 @@ func TestMain(m *testing.M) {
 	if err != nil {
 		configured = false
 		log.Println(err.Error())
+		os.Exit(m.Run())
+		return
 	}
 
 	//Load the current schema
