@@ -4,7 +4,7 @@ import (
 	"golang.org/x/crypto/bcrypt"
 	"strconv"
 	"time"
-	"fmt"
+	_ "fmt"
 	"math/rand"
 )
 
