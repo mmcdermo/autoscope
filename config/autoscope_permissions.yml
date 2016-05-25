@@ -1,0 +1,37 @@
+permissions:
+  autoscope_unassigned:
+    owner: read, write
+    group: read
+    everyone: none
+  autoscope_users:
+    owner: read, write
+    group: read
+    everyone: none
+  autoscope_groups:
+    owner: read, write
+    group: read
+    everyone: none
+  autoscope_user_groups:
+    owner: read, write
+    group: read
+    everyone: none
+  autoscope_user_sessions:
+    owner: read, write
+    group: read
+    everyone: none
+  autoscope_table_stats:
+    owner: read, write
+    group: read
+    everyone: none
+  autoscope_restriction_stats:
+    owner: read, write
+    group: read
+    everyone: none
+  autoscope_foreignkey_stats:
+    owner: read, write
+    group: read
+    everyone: none
+  autoscope_objectfield_stats:
+    owner: read, write
+    group: read
+    everyone: none
