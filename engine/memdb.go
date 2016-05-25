@@ -123,7 +123,23 @@ func (res MemDBModificationResult) RowsAffected() (int64, error){
 	return res.rowsAffected, nil
 }
 
-func performOp(v1 interface{}, v2 interface{}, op string) bool {
+//Turn float32s into float64s and int32s & ints into int64s
+func upcast(v interface{}) interface{} {
+	switch v.(type){
+	case int32:
+		return int64(v.(int32))
+	case int:
+		return int64(v.(int))
+	case float32:
+		return float64(v.(int))
+	}
+	return v
+}
+func performOp(vd1 interface{}, vd2 interface{}, op string) bool {
+	if op == "" { op = "=" } //default to equality
+	v1 := upcast(vd1)
+	v2 := upcast(vd2)
+	
 	switch op {
 	case "=":
 		switch v1.(type) {
@@ -133,10 +149,6 @@ func performOp(v1 interface{}, v2 interface{}, op string) bool {
 			return v1.(int64) == v2.(int64)
 		case float64:
 			return v1.(float64) == v2.(float64)
-		case int:
-			return v1.(int) == v2.(int)
-		case float32:
-			return v1.(float32) == v2.(float32)
 		}
 	case "<":
 		switch v1.(type) {
@@ -144,10 +156,6 @@ func performOp(v1 interface{}, v2 interface{}, op string) bool {
 			return v1.(int64) < v2.(int64)
 		case float64:
 			return v1.(float64) < v2.(float64)
-		case int:
-			return v1.(int) < v2.(int)
-		case float32:
-			return v1.(float32) < v2.(float32)
 		}
 	case ">":
 		switch v1.(type) {
@@ -155,13 +163,9 @@ func performOp(v1 interface{}, v2 interface{}, op string) bool {
 			return v1.(int64) > v2.(int64)
 		case float64:
 			return v1.(float64) > v2.(float64)
-		case int:
-			return v1.(int) > v2.(int)
-		case float32:
-			return v1.(float32) > v2.(float32)
 		}
 	}
-	fmt.Println("MEMDB ERROR: Type not found")
+	fmt.Println("MEMDB ERROR: Unknown operation or type for op: "+op)
 	return false
 }
 //Recursively evaluate a restriction formula for a given row

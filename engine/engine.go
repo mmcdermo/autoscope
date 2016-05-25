@@ -47,6 +47,8 @@ type Engine struct {
 	GlobalStatsLock sync.RWMutex
 	LocalStats map[string]TableQueryStats
 	LocalStatsLock sync.RWMutex
+	Permissions map[string]ObjectPermissions
+	PermissionsLock sync.RWMutex
 }
 
 // In order to accurately aggregate our local stats into the database
@@ -110,6 +112,9 @@ func (e *Engine) Init(config *Config) (error){
 	e.LocalStats = make(map[string]TableQueryStats, 0)
 	e.GlobalStats = make(map[string]TableQueryStats, 0)
 
+	//Initialize permissions
+	e.Permissions = make(map[string]ObjectPermissions, 0)
+	
 	//Load default schema
 	defTables, err := AutoscopeTableSchemas()
 	if err != nil { return err }
@@ -216,17 +221,36 @@ type RelationPath struct {
 	FromField string
 }
 
-//Perform a Select query using the engine
-func (e *Engine) Select(query SelectQuery) (RetrievalResult, error){
+func (e *Engine) RawSelect(query SelectQuery) (RetrievalResult, map[string]RelationPath, error){
 	e.SchemaLock.RLock()
 	defer e.SchemaLock.RUnlock()
 
 	e.GlobalStatsLock.RLock()
 	prefixes, err := genPrefixes(e.Schema, e.GlobalStats, query.Table, query.Selection)
 	e.GlobalStatsLock.RUnlock()
+	if err != nil { return nil, prefixes, err }
 
-	if err != nil { return nil, err }
 	r, err := e.DB.Select(e.Schema, prefixes, query)
+	return r, prefixes, err
+}
+
+//Perform a Select query using the engine
+func (e *Engine) Select(userId int64, query SelectQuery) (RetrievalResult, error){
+	//Modify query to encapsulate necessary permissions
+	perms, ok := e.GetTablePermissions(query.Table)
+	if !ok { return nil, errors.New("No permissions for table "+query.Table) }
+	groups, err := UserGroups(e, userId)
+	if err != nil { return nil, err }
+	sel, allow := AddPermissionsToSelection(query.Selection,
+		perms, userId, groups, ReadAction)
+	if !allow {
+		log.Println("Denying SELECT query due to restrictive permissions")
+		return EmptyRetrievalResult{}, nil
+	}
+	query.Selection = sel
+
+	//Perform query
+	r, prefixes, err := e.RawSelect(query)
 
 	//Update global stats
 	e.GlobalStatsLock.Lock()
@@ -252,17 +276,42 @@ func (e *Engine) Select(query SelectQuery) (RetrievalResult, error){
 	return r, err
 }
 
-//Perform an Update query using the engine
-func (e *Engine) Update(query UpdateQuery) (ModificationResult, error){
+func (e *Engine) GetTablePermissions(tableName string) (ObjectPermissions, bool){
+	e.PermissionsLock.RLock()
+	perms, ok := e.Permissions[tableName]
+	e.PermissionsLock.RUnlock()
+	return perms, ok
+}
+
+//Perform an update query without checking authentication or logging stats
+func (e *Engine) RawUpdate(query UpdateQuery) (ModificationResult, map[string]RelationPath, error){
 	e.SchemaLock.RLock()
 	defer e.SchemaLock.RUnlock()
-
+	
 	e.GlobalStatsLock.RLock()
 	prefixes, err := genPrefixes(e.Schema, e.GlobalStats, query.Table, query.Selection)
 	e.GlobalStatsLock.RUnlock()
-
-	if err != nil { return nil, err }
+	if err != nil { return nil, nil, err }	
+	
 	r, err := e.DB.Update(e.Schema, prefixes, query)
+	return r, prefixes, err
+}
+
+//Perform an Update query using the engine
+func (e *Engine) Update(userId int64, query UpdateQuery) (ModificationResult, error){
+	//Modify query to include security checks
+	perms, ok := e.GetTablePermissions(query.Table)
+	if !ok { return nil, errors.New("No permissions for table "+query.Table) }
+	groups, err := UserGroups(e, userId)
+	if err != nil { return nil, err }
+	sel, allow := AddPermissionsToSelection(query.Selection,
+		perms, userId, groups, UpdateAction)
+	if !allow {
+		return EmptyModificationResult{}, nil
+	}
+	
+	query.Selection = sel
+	r, prefixes, err := e.RawUpdate(query)
 
 	//Update global stats
 	e.GlobalStatsLock.Lock()
@@ -297,12 +346,34 @@ func (e *Engine) Update(query UpdateQuery) (ModificationResult, error){
 	return r, err
 }
 
+//Perform an insertion without authentication checks or stat logging
+func (e *Engine) RawInsert(query InsertQuery) (ModificationResult, error){
+	return e.DB.Insert(e.Schema, query)
+}
+
 //Perform an Insert query using the engine
-func (e *Engine) Insert(query InsertQuery) (ModificationResult, error){
+func (e *Engine) Insert(userId int64, query InsertQuery) (ModificationResult, error){
 	e.SchemaLock.RLock()
 	defer e.SchemaLock.RUnlock()
 
-	r, err := e.DB.Insert(e.Schema, query)
+	//If no permissions exist for table, setup default permissions
+	e.PermissionsLock.Lock()
+	_, ok := e.Permissions[query.Table]; if !ok {
+		e.Permissions[query.Table] = DefaultPermissions()
+	}
+	e.PermissionsLock.Unlock()
+	
+	//Check permissions before inserting
+	perms, err := HasInsertPermissions(e, query.Table, userId)
+	if err != nil { return nil, err }
+	if !perms {
+		return nil, errors.New("User does not have permissions to insert into this table.")
+	}
+
+	//Set row owner to current user
+	query.Data["autoscope_uid"] = userId
+	
+	r, err := e.RawInsert(query)
 
 	e.GlobalStatsLock.Lock()
 	stats := e.GlobalStats[query.Table]

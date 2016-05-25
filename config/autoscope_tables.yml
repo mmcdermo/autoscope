@@ -12,6 +12,23 @@ tables:
       salt: bigint
     indices:
       - username
+  autoscope_groups:
+    columns:
+      name: varchar(128)
+  autoscope_user_groups:
+    columns:
+      user_id: bigint
+      group_id: bigint
+    indices:
+      - user_id
+      - group_id
+  autoscope_table_groups:
+    columns:
+      table_name: varchar(128)
+      group_id: bigint
+    indices:
+      - table_name
+      - group_id
   autoscope_user_sessions:
     columns:
       time: bigint

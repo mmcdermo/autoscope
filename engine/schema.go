@@ -294,6 +294,7 @@ func AddDefaultFields(t Table) Table {
 	t.Columns["autoscope_gid"] = "bigint"
 	return t
 }
+
 //Extract autoscope table schemas from autoscope_tables.yml
 func AutoscopeTableSchemas() ([]Table, error){
 	contents, err := ioutil.ReadFile(os.Getenv("AUTOSCOPE_CONFIG_DIR") + "/autoscope_tables.yml")

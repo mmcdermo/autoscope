@@ -24,9 +24,26 @@ type ModificationResult interface {
 	RowsAffected() (int64, error)
 }
 
-
 //Attempts to retrieve a single row from result, and fails if it cannot
 func GetRow (res RetrievalResult) (map[string]interface{}, error) {
 	if res.Next() == false { return nil, errors.New("No rows to retrieve")}
 	return res.Get()
+}
+
+type EmptyModificationResult struct {
+}
+func (r EmptyModificationResult) LastInsertId() (int64, error){
+	return -1, nil
+}
+func (r EmptyModificationResult) RowsAffected() (int64, error){
+	return 0, nil
+}
+
+type EmptyRetrievalResult struct {
+}
+func (r EmptyRetrievalResult) Next() (bool){
+	return false
+}
+func (r EmptyRetrievalResult) Get() (map[string]interface{}, error){
+	return nil, nil
 }

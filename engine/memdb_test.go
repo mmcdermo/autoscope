@@ -43,7 +43,7 @@ func TestQueries(t *testing.T){
 	r, err = res.Get()
 	if err != nil { t.Fatal(err.Error()) }
 	for k, v := range data {
-		if v != r[k] {
+		if v != r[k] && int64(v.(int)) != r[k] {
 			t.Fatal("Incorrect value for key: "+k)
 		}
 	}

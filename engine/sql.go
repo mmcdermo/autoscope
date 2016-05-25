@@ -86,7 +86,7 @@ type AttrSelection struct {
 }
 func (as AttrSelection) toSQL() (SQLPart, error) {
 	var s SQLPart
-	if false == ValidOp(as.Op){ return s, errors.New("Invalid operator") }
+	if false == ValidOp(as.Op){ return s, errors.New("Invalid operator "+as.AttrA+" "+as.Op+" "+as.AttrB) }
 	return SQLPart{SQL: cast("%s", as.CastA) + " " + as.Op + " "+cast("%s", as.CastB), Idents:[]string{as.AttrA, as.AttrB}}, nil
 }
 func (as AttrSelection) validateSemantics(t *SchemaInfo) bool {
@@ -121,7 +121,7 @@ type ValueSelection struct {
 }
 func (vs ValueSelection) toSQL() (SQLPart, error) {
 	var s SQLPart
-	if false == ValidOp(vs.Op){ return s, errors.New("Invalid operator") }
+	if false == ValidOp(vs.Op){ return s, errors.New("Invalid operator "+vs.Attr+" via "+vs.Op) }
 	return SQLPart{SQL: cast("%s", vs.Cast) + " " + vs.Op + " ?",
 		Idents: []string{vs.Attr},
 		Args:[]interface{}{vs.Value}}, nil
@@ -369,6 +369,16 @@ func NestAnds(formulas []Formula) Formula {
 	return And{
 		A: formulas[0],
 		B: NestAnds(formulas[1:len(formulas)]),
+	}
+}
+
+//Convert a list of Formulas into a tree of nested ORs with the formulas
+// as leaves
+func NestOrs(formulas []Formula) Formula {
+	if len(formulas) == 1 { return formulas[0] }
+	return Or{
+		A: formulas[0],
+		B: NestOrs(formulas[1:len(formulas)]),
 	}
 }
 

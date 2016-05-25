@@ -98,7 +98,17 @@ func TestQueryStats(t *testing.T){
 	if err != nil { t.Fatal(err.Error()) }
 	
 
-	res, err := e.Insert(InsertQuery{
+	//Create test user, test group, and add that group to
+	// table ownership. 
+	uid, err := CreateUser(&e, "username", "password")
+	gid, err := CreateGroup(&e, "group_with_user")
+	if err != nil { t.Fatal(err.Error()) }
+	err = AddUserToGroup(&e, uid, gid)
+	if err != nil { t.Fatal(err.Error()) }
+	AddTableGroup(&e, "test_table0", gid)
+	AddTableGroup(&e, "test_table1", gid)
+	
+	res, err := e.Insert(uid, InsertQuery{
 		Table: "test_table0",
 		Data: map[string]interface{}{
 			"strcol": "strval0",
@@ -106,7 +116,7 @@ func TestQueryStats(t *testing.T){
 	})
 	if err != nil { t.Fatal(err.Error()) }
 	
-	res, err = e.Insert(InsertQuery{
+	res, err = e.Insert(uid, InsertQuery{
 		Table: "test_table1",
 		Data: map[string]interface{}{
 			"strcol": "strval",
@@ -120,7 +130,7 @@ func TestQueryStats(t *testing.T){
 	fmt.Println(res)
 	if err != nil { t.Fatal(err.Error()) }
 
-	res, err = e.Update(UpdateQuery{
+	res, err = e.Update(uid, UpdateQuery{
 		Table: "test_table1",
 		Selection: ValueSelection{
 			Attr: "strcol",
@@ -130,7 +140,7 @@ func TestQueryStats(t *testing.T){
 		Data: map[string]interface{}{ "intcol": 5 },
 	})
 	
-	res2, err := e.Select(SelectQuery{
+	res2, err := e.Select(uid, SelectQuery{
 		Table: "test_table1",
 		Selection: ValueSelection{
 			Attr: "strcol",
@@ -138,10 +148,11 @@ func TestQueryStats(t *testing.T){
 			Value: "strval",
 		},
 	})
-	
+	if err != nil { t.Fatal(err.Error()) }
 	res2.Next()
 	dict, err := res2.Get()
 	if dict["intcol"] != 5 {
+		t.Log(dict)
 		t.Fatal("Update failed")
 	}
 
@@ -190,7 +201,19 @@ func TestMigration(t *testing.T){
 	err := e.Init(&config)
 	if err != nil { t.Fatal(err.Error()) }
 
-	_, err = e.Insert(InsertQuery{
+
+
+	//Create test user, test group, and add that group to
+	// table ownership. 
+	uid, err := CreateUser(&e, "username", "password")
+	gid, err := CreateGroup(&e, "group_with_user")
+	if err != nil { t.Fatal(err.Error()) }
+	err = AddUserToGroup(&e, uid, gid)
+	if err != nil { t.Fatal(err.Error()) }
+	AddTableGroup(&e, "test_table0", gid)
+	AddTableGroup(&e, "test_table1", gid)
+	
+	_, err = e.Insert(uid, InsertQuery{
 		Table: "test_table0",
 		Data: map[string]interface{}{"strcol": "strval0",},
 	})
@@ -201,7 +224,7 @@ func TestMigration(t *testing.T){
 	if len(steps) > 0 { t.Fatal("Premature migration generation") }
 
 	
-	_, err = e.Insert(InsertQuery{
+	_, err = e.Insert(uid, InsertQuery{
 		Table: "test_table0",
 		Data: map[string]interface{}{"strcol": "strval1",},
 	})
@@ -216,7 +239,7 @@ func TestMigration(t *testing.T){
 	}
 	fmt.Println(steps)
 	
-	_, err = e.Insert(InsertQuery{
+	_, err = e.Insert(uid, InsertQuery{
 		Table: "test_table0",
 		Data: map[string]interface{}{"strcol": "strval2",},
 	})
@@ -243,9 +266,12 @@ func TestMigration(t *testing.T){
 	//Now, the objectfield should be ready for creation
 	steps, err = e.MigrationFromStats()
 	if err != nil { t.Fatal(err.Error()) }
-	if len(steps) != 2 { t.Fatal("Incorrect number of steps") }
+	if len(steps) != 3 {
+		t.Fatal("Incorrect number of steps")
+	}
 	strColM := false
 	idColM := false
+	asColM := false
 	for _, step := range steps {
 		if step.(MigrationStepPromoteField).column == "strcol" {
 			strColM = true
@@ -253,8 +279,12 @@ func TestMigration(t *testing.T){
 		if step.(MigrationStepPromoteField).column == "id" {
 			idColM = true
 		}
+		if step.(MigrationStepPromoteField).column == "autoscope_uid" {
+			asColM = true
+		}
+		
 	}
-	if strColM == false || idColM == false {
+	if strColM == false || idColM == false || asColM == false {
 		t.Fatal("Missing column migration")
 	}
 }
