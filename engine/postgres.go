@@ -703,7 +703,6 @@ func (postgresDB *PostgresDB) Update(schema map[string]Table, prefixes map[strin
 			if err != nil { return nil, err	}
 			queryStr += "autoscope_objectfields = "
 			queryStr += "'" + string(s) + "'"
-			fmt.Println(queryStr)
 		}
 	}
 

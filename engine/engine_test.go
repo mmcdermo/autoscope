@@ -108,7 +108,7 @@ func TestQueryStats(t *testing.T){
 	AddTableGroup(&e, "test_table0", gid)
 	AddTableGroup(&e, "test_table1", gid)
 	
-	res, err := e.Insert(uid, InsertQuery{
+	_, err = e.Insert(uid, InsertQuery{
 		Table: "test_table0",
 		Data: map[string]interface{}{
 			"strcol": "strval0",
@@ -116,7 +116,7 @@ func TestQueryStats(t *testing.T){
 	})
 	if err != nil { t.Fatal(err.Error()) }
 	
-	res, err = e.Insert(uid, InsertQuery{
+	_, err = e.Insert(uid, InsertQuery{
 		Table: "test_table1",
 		Data: map[string]interface{}{
 			"strcol": "strval",
@@ -127,10 +127,9 @@ func TestQueryStats(t *testing.T){
 			"fkcol": "test_table0",
 		},
 	})
-	fmt.Println(res)
 	if err != nil { t.Fatal(err.Error()) }
 
-	res, err = e.Update(uid, UpdateQuery{
+	_, err = e.Update(uid, UpdateQuery{
 		Table: "test_table1",
 		Selection: ValueSelection{
 			Attr: "strcol",
@@ -237,7 +236,6 @@ func TestMigration(t *testing.T){
 	if steps[0].(MigrationStepCreateTable).tableName != "test_table0" {
 		t.Fatal("Incorrect migration")
 	}
-	fmt.Println(steps)
 	
 	_, err = e.Insert(uid, InsertQuery{
 		Table: "test_table0",
@@ -287,4 +285,39 @@ func TestMigration(t *testing.T){
 	if strColM == false || idColM == false || asColM == false {
 		t.Fatal("Missing column migration")
 	}
+
+	//Perform the migration
+	err = e.DB.PerformMigration(steps)
+	if err != nil { t.Fatal(err.Error()) }
+
+	//Reload the schema
+	err = e.LoadSchema()
+	if err != nil { t.Fatal(err.Error()) }
+
+	//Now, no new migrations should be needed, even after
+	// numerous inserts and updates.
+	i := 0
+	for i < 10 {
+		i += 1
+		_, err = e.Insert(uid, InsertQuery{
+			Table: "test_table0",
+			Data: map[string]interface{}{"strcol": "strval1",},
+		})
+		if err != nil { t.Fatal(err.Error()) }
+		_, err = e.Update(uid, UpdateQuery{
+			Table: "test_table0",
+			Selection: Restrictions(map[string]interface{}{"strcol": "strval1",}),
+			Data: map[string]interface{}{"strcol": "strval1",},
+		})
+		if err != nil { t.Fatal(err.Error()) }
+		
+	}
+
+	steps, err = e.MigrationFromStats()
+	if err != nil { t.Fatal(err.Error()) }
+	if len(steps) != 0 {
+		t.Log(steps)
+		t.Fatal("Incorrect number of steps")
+	}
+
 }

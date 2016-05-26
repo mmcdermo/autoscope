@@ -132,7 +132,7 @@ func (e *Engine) Init(config *Config) (error){
 
 	//Start automigration thread
 	go e.autoMigrate()
-	log.Println("initialized")
+	log.Println("Autoscope engine initialized")
 	return nil
 }
 
@@ -143,6 +143,8 @@ func (e *Engine) MigrationFromStats() ([]MigrationStep, error){
 	var steps []MigrationStep
 	e.GlobalStatsLock.Lock()
 	defer e.GlobalStatsLock.Unlock()
+	e.SchemaLock.RLock()
+	e.SchemaLock.RUnlock()
 	
 	//Determine any object fields that need promotion
 	for tableName, stats := range e.GlobalStats {
@@ -150,10 +152,17 @@ func (e *Engine) MigrationFromStats() ([]MigrationStep, error){
 			for field, tyCountMap := range stats.ObjectFieldCount {
 				//Determine which type this object field has been used most frequently
 				// and whether it's been used often enough to justify promotion
+
+				//Skip columns that already exist
+				if _, ok := table.Columns[field]; ok {
+					log.Println("Column "+field+" already exists")
+					continue
+				} 
+				
 				maxTy := maxKey(tyCountMap)
 				if maxTy != "" {
 					if tyCountMap[maxTy] >= e.Config.NewFieldThreshhold {
-						log.Println("Migrating field "+field+" of type "+maxTy)
+						log.Println("Creating column for field "+field+" of type "+maxTy)
 						steps = append(steps, MigrationStepPromoteField{
 							tableName: tableName,
 							table: table,
@@ -186,6 +195,7 @@ func (e *Engine) LoadSchema() error {
 	//Reload database schema
 	e.SchemaLock.Lock()
 	defer e.SchemaLock.Unlock()
+	log.Println("Loading schema....")
 	schema, err := e.DB.CurrentSchema()
 	e.Schema = schema
 	return err
@@ -410,8 +420,6 @@ func defStats() TableQueryStats {
 func (e *Engine) loadGlobalStats() error {
 	e.GlobalStatsLock.Lock()
 	defer e.GlobalStatsLock.Unlock()
-
-	log.Println("Loading stats")
 
 	//Load basic table stats
 	query := SelectQuery{ Table: "autoscope_table_stats", Selection: nil }

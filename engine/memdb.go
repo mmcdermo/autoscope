@@ -3,7 +3,7 @@ package engine
 import (
 	"sync"
 	"errors"
-	"fmt"
+	"log"
 	_ "strconv"
 )
 
@@ -38,7 +38,7 @@ type MemTable struct {
 func (memDB *MemDB) Connect(config *Config) error {
 	memDB.Config = config
 	memDB.Tables = make(map[string]*MemTable, 0)
-	fmt.Println("MemDB Initialized")
+	log.Println("MemDB Initialized")
 	return nil
 }
 
@@ -61,11 +61,14 @@ func (memDB *MemDB) PerformMigration(steps []MigrationStep) error {
 			err := memDB.MigrationCreateTable(val)
 			if err != nil { return err }
 		case MigrationStepPromoteField:
-			// All fields stored in the same way
-			return nil
+			mspf := step.(MigrationStepPromoteField)
+			memDB.TableLock.Lock()
+			memDB.Tables[mspf.tableName].Columns[mspf.column] = mspf.columnType
+			memDB.TableLock.Unlock()
+			break
 		case MigrationStepIndexColumn:
 			// Indexing not yet supported
-			return nil
+			break
 		default:
 			return errors.New("memDB: Unknown migration step type")
 		}
@@ -75,7 +78,7 @@ func (memDB *MemDB) PerformMigration(steps []MigrationStep) error {
 
 func (memDB *MemDB) MigrationCreateTable(ct MigrationStepCreateTable) error {
 	if _, ok := memDB.Tables[ct.tableName]; ok {
-		fmt.Println("memDB: Table already exists")
+		log.Println("memDB: Table already exists")
 		return nil 
 	}
 	memDB.Tables[ct.tableName] = &MemTable{
@@ -165,7 +168,7 @@ func performOp(vd1 interface{}, vd2 interface{}, op string) bool {
 			return v1.(float64) > v2.(float64)
 		}
 	}
-	fmt.Println("MEMDB ERROR: Unknown operation or type for op: "+op)
+	log.Println("MEMDB ERROR: Unknown operation or type for op: "+op)
 	return false
 }
 //Recursively evaluate a restriction formula for a given row
