@@ -5,7 +5,7 @@ import (
 	//	"time"
 	//	"encoding/json"
 	//	"strconv"
-	"autoscope/server"
+	"http://github.com/mmcdermo/autoscope/server"
 )
 
 type Config struct {
