@@ -11,7 +11,7 @@ import (
 	"github.com/gorilla/mux"
 	"gopkg.in/yaml.v2"
 	"io/ioutil"
-	"github.com/mmcdermo/autoscope/engine"
+	engine "github.com/mmcdermo/autoscope/engine"
 )
 
 func report_api_error(w http.ResponseWriter, err error, user_error string){
