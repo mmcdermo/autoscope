@@ -8,7 +8,7 @@ import (
 	"encoding/json"
 	"io/ioutil"
 	"errors"
-	"autoscope/engine"
+	"github.com/mmcdermo/autoscope/engine"
 	"strconv"
 	"bytes"
 )
