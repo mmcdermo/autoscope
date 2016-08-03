@@ -152,6 +152,7 @@ func (postgresDB *PostgresDB) MigrationPromoteField(pf MigrationStepPromoteField
 	rows, err := postgresDB.connection.Query("SELECT id, autoscope_objectfields FROM " + pf.tableName + " WHERE autoscope_objectfields ->> "+jsonProp(pf.column)+" != '')")
 	defer rows.Close()
 	for rows.Next(){
+		//TODO: Needs testing. This appears to cause runtime panics occasionally. 
 		var jsonStr string
 		var id int64
 		err = rows.Scan(&id, &jsonStr)
