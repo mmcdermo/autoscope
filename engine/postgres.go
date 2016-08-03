@@ -139,7 +139,7 @@ func (postgresDB *PostgresDB) MigrationCreateTable(ct MigrationStepCreateTable) 
 
 func (postgresDB *PostgresDB) MigrationPromoteField(pf MigrationStepPromoteField) error {
 	//First, create column in table
-	queryStr := "ALTER TABLE " + pf.tableName + " CREATE COLUMN " + pf.column + " " + postgresColumnType(pf.table, pf.column) + " " + postgresConstraints(pf.table, pf.column)
+	queryStr := "ALTER TABLE " + pf.tableName + " ADD COLUMN " + pf.column + " " + postgresColumnType(pf.table, pf.column) + " " + postgresConstraints(pf.table, pf.column)
 	log.Println(queryStr)
 	_, err := postgresDB.connection.Exec(queryStr)
 	if err != nil {
