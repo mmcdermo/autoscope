@@ -46,6 +46,17 @@ type Formula interface {
 	validateSemantics(*SchemaInfo) bool
 }
 
+type Tautology struct {
+	
+}
+
+func (t Tautology) toSQL() (SQLPart, error){
+	return SQLPart{SQL: "true"}, nil
+}
+func (t Tautology) validateSemantics(s *SchemaInfo) bool{
+	return true
+}
+
 //Function to determine if a given string is a valid SQL binary operation
 func ValidOp(s string) bool {
 	validOps := []string{"<", "<=", "=", "!=", ">=", ">", "LIKE"}
@@ -365,6 +376,7 @@ func ModifyLeaves(fn func(Formula)Formula, formula Formula) Formula {
 //Convert a list of Formulas into a tree of nested ANDs with the formulas
 // as leaves
 func NestAnds(formulas []Formula) Formula {
+	if len(formulas) == 0 { return Tautology{} } 
 	if len(formulas) == 1 { return formulas[0] }
 	return And{
 		A: formulas[0],

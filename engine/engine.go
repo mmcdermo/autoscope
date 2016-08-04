@@ -120,11 +120,15 @@ func (e *Engine) Init(config *Config) (error){
 	if err != nil { return err }
 	defSchema := make(map[string]Table, 0)
 	for _, table := range defTables {
+		log.Println("Def table: "+table.Name)
 		defSchema[table.Name] = table
 	}
 
+	//Load current schema
+	schema, err := e.DB.CurrentSchema()
+	
 	//Create migration to new schema
-	migration, err := CreateMigration(config, nil, defSchema)
+	migration, err := CreateMigration(config, schema, defSchema)
 
 	//Perform migration
 	err = e.DB.PerformMigration(migration)

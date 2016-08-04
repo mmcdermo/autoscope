@@ -14,6 +14,10 @@ import (
 	engine "github.com/mmcdermo/autoscope/engine"
 )
 
+var (
+	e engine.Engine
+)
+
 func report_api_error(w http.ResponseWriter, err error, user_error string){
 	w.Header().Set("Content-Type", "text/json")
 	http.Error(w, "{\"error\": \"" + user_error + "--" + err.Error() + "\"}", 200)
@@ -46,8 +50,8 @@ func SelectHandler(w http.ResponseWriter, r *http.Request){
 		report_api_error(w, err, "Unable to parse query "+string(str))
 		return
 	}
-	res, err := engine.Select(sq)
-	fmt.Fprintf(w, "%s", res.Status)
+	res, _, err := e.RawSelect(sq)
+	fmt.Fprintf(w, "%s", res)
 }
 
 func RESTHandler(w http.ResponseWriter, r *http.Request){
@@ -99,9 +103,11 @@ func RunServer (defaultConfig *engine.Config) {
 	log.Println("Loaded config file. Port is: "+config.Port)
 
 
-	err := engine.DBConnect(&config)
+
+	
+	err := e.Init(&config)
 	if err != nil {
-		log.Fatalf("Database Connection Error: %v", err)
+		log.Fatalf("Engine Initialization Error: %v", err)
 	}
 
 	err = RunHTTPServer(config.Port)

@@ -25,9 +25,10 @@ func TestMain(m *testing.M) {
 	//Load the test config
 	config_dir := os.Getenv("AUTOSCOPE_CONFIG_DIR")
 	contents, err := ioutil.ReadFile(config_dir+"/test_postgres.yml")
+	configured = true
 	if err != nil {
 		configured = false
-		log.Println("Failed to read config file.")
+		log.Println("Failed to read config file "+config_dir+"/test_postgres.yml")
 		os.Exit(m.Run())
 		return
 	}
@@ -44,6 +45,7 @@ func TestMain(m *testing.M) {
 	err = ps.Connect(config)
 	if err != nil {
 		configured = false
+		log.Println("Postgres connection error: ")
 		log.Println(err.Error())
 		os.Exit(m.Run())
 		return
@@ -61,6 +63,7 @@ func TestMain(m *testing.M) {
 		log.Println("Dropping table: "+n)
 		_, err := ps.connection.Exec("drop table "+n+"")
 		if err != nil {
+			log.Println("Error dropping tables")
 			configured = false
 			log.Println(err.Error())
 		}
@@ -73,6 +76,7 @@ func TestMain(m *testing.M) {
 	newSchema, err := GenerateNewSchema(config, currentSchema, nil)
 	if err != nil {
 		configured = false
+		log.Println("Error generating new schema")		
 		log.Println(err.Error())
 	}
 
@@ -86,11 +90,13 @@ func TestMain(m *testing.M) {
 	err = ps.PerformMigration(migration)
 	if err != nil {
 		configured = false
+		log.Println("Migration error:")
 		log.Println(err)
 	}
 
 	if !configured {
 		config = nil
+		log.Println("===== Postgres not configured. =====")
 	}
 	os.Exit(m.Run())
 }

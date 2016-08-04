@@ -4,7 +4,8 @@ import (
 	"golang.org/x/crypto/bcrypt"
 	"strconv"
 	"time"
-	_ "fmt"
+	"errors"
+	_ "log"
 	"math/rand"
 )
 
@@ -27,6 +28,14 @@ func Login(e *Engine, username string, password string) (bool, error) {
 
 // Create a new user with given password
 func CreateUser(e *Engine, username string, password string) (int64, error) {
+	//First ensure no such user exists.
+	sres, _, err := e.RawSelect(Filter("autoscope_users", map[string]interface{}{
+			"username": username,
+	}))
+	if sres.Next() {
+		return -1, errors.New("User with given username already exists")
+	}
+
 	salt := rand.Int31()
 	salted := password + strconv.FormatInt(int64(salt), 10)
 	passhash, err := bcrypt.GenerateFromPassword([]byte(salted), 10)
@@ -42,6 +51,19 @@ func CreateUser(e *Engine, username string, password string) (int64, error) {
 	if err != nil { return -2, err }
 	insertId, err := res.LastInsertId()
 	return insertId, err
+}
+
+//Get a user's ID from their username
+func GetUserId(e *Engine, username string) (userId int64, err error){
+	res, _, err := e.RawSelect(Filter("autoscope_users", map[string]interface{}{
+		"username": username,
+	}))
+	for res.Next(){
+		m, err := res.Get()
+		if err != nil { return -1, err }
+		return m["id"].(int64), err
+	}
+	return -1, errors.New("No such user found")
 }
 
 //Authorize a request for the given user. 
@@ -74,6 +96,7 @@ func CreateSession(e *Engine, username string) (string, error) {
 
 //Clear any sessions older than `duration` from the database.
 func ClearSessions(db AutoscopeDB, duration int64) error {
+	//TODO
 	return nil
 }
 
@@ -125,4 +148,20 @@ func UserInGroup(e *Engine, userId int64, groupId int64) (bool, error) {
 	}))
 	if err != nil { return false, err }
 	return res.Next(), nil
+}
+
+//Return a group's ID given its name
+func GetGroupId(e *Engine, groupName string) (int64, error){
+	res, _, err := e.RawSelect(Filter("autoscope_groups", map[string]interface{}{
+		"name": groupName,
+	}))
+	if err != nil { return -1, err }
+	
+	if res.Next(){
+		m, err := res.Get()
+		if err != nil { return -1, err }
+		return m["id"].(int64), nil
+	}
+	
+	return -1, errors.New("No group found")
 }

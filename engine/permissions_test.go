@@ -54,7 +54,7 @@ func TestPermissions(t *testing.T){
 	if err != nil { t.Fatal(err.Error()) }
 
 	//Create other user and another group
-	otherUID, err := CreateUser(&e, "username2", "password")
+	otherUID, err := CreateUser(&e, "username2", "pa ssword")
 	if err != nil { t.Fatal(err.Error()) }
 	
 	otherGID, err := CreateGroup(&e, "group_without_user")

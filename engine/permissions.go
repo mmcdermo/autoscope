@@ -7,21 +7,20 @@ import (
 	"strings"
 	"errors"
 )
-//
+
 //  TODO: For efficiency, several optimizations need to be made here.
 //   - Caching of logged-in user group membership in the engine
 //   - For production mode, generation of UPDATE/SELECT queries that
 //     effectively perform user/group permission testing, rather than
 //     executing additional queries. This is unsuitable for debug mode,
 //     since it would e.g. return 0 results rather than a permission error.
-//
-
 
 type Permissions struct {
 	Read bool
 	Update bool
 	Insert bool
 }
+
 
 type ObjectPermissions struct {
 	Owner Permissions

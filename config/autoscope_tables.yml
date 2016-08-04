@@ -32,10 +32,10 @@ tables:
   autoscope_user_sessions:
     columns:
       time: bigint
-      user_id: bigint
+      username: varchar(128)
       session_id: varchar(128)
     indices:
-      - user_id
+      - username
       - time
   autoscope_table_stats:
     columns:

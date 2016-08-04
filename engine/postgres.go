@@ -16,7 +16,6 @@ import (
 	"github.com/lib/pq"
 )
 
-
 type PostgresDB struct {
 	connection *sql.DB
 	version string
@@ -140,7 +139,6 @@ func (postgresDB *PostgresDB) MigrationCreateTable(ct MigrationStepCreateTable) 
 func (postgresDB *PostgresDB) MigrationPromoteField(pf MigrationStepPromoteField) error {
 	//First, create column in table
 	queryStr := "ALTER TABLE " + pf.tableName + " ADD COLUMN " + pf.column + " " + postgresColumnType(pf.table, pf.column) + " " + postgresConstraints(pf.table, pf.column)
-	log.Println(queryStr)
 	_, err := postgresDB.connection.Exec(queryStr)
 	if err != nil {
 		return err
@@ -230,7 +228,6 @@ func (res PostgresRetrievalResult) Get() (map[string]interface{}, error) {
 	vals := make([]interface{}, len(cols))
 	for idx, col := range cols {
 		if ty, ok := tableCols[col]; !ok {
-			log.Println(res.Table)
 			return row, errors.New("Column returned and not found in schema: "+col)
 		} else {
 			ty = strings.Split(ty, "(")[0]
@@ -723,8 +720,6 @@ func (postgresDB *PostgresDB) Update(schema map[string]Table, prefixes map[strin
 	whereClauseSQL = questionToPositional(whereClauseSQL, len(values) + 1)
 	queryStr += " WHERE " + whereClauseSQL
 
-	log.Println("-------------------------------")
-	log.Println(queryStr)
 	res, err := postgresDB.connection.Exec(queryStr, append(values, whereClause.Args...)...)
 	if err != nil { return r, err }
 	rowsAffected, err := res.RowsAffected()
