@@ -90,11 +90,25 @@ func setupSession() (error) {
 	return nil
 }
 
+func setupPermissions() error {
+	perms := engine.ObjectPermissions{
+
+		Owner: Permissions{ Read: true, Update: true, Insert: true, },
+		Group: Permissions{ Read: true, Update: true, Insert: true, },
+		Everyone: Permissions{ Read: true, Update: true, Insert: true, },
+	}
+	e.Permissions["choon"] = perms
+	return nil
+}
+
 func TestMain(m *testing.M){
 	go RunServer(&engine.Config{ Port: "4210", DatabaseType: "memdb" }, nil)
 	time.Sleep(250 * time.Millisecond)
 	err := setupSession()
 	if err != nil { log.Fatal(err.Error()) }
+	err := setupPermissions()
+	if err != nil { log.Fatal(err.Error()) }
+	
 	m.Run()
 }
 
