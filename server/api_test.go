@@ -53,14 +53,18 @@ func APICall(api_url string, method string, args map[string]string, obj json.Unm
 	// Extract the returned data
 	defer resp.Body.Close()
 	body, err := ioutil.ReadAll(resp.Body)
-    if err != nil { return err }
+	if err != nil {
+		return err
+	}
 
 	if "200 OK" != resp.Status {
 		return errors.New("Bad Status: "+resp.Status+"\n\tBody: "+string(body))
 	}
 
 	err = obj.UnmarshalJSON([]byte(body))
-	if err != nil { return errors.New(err.Error()+ " Body: "+string(body))}
+	if err != nil {
+		return errors.New(err.Error()+ " Body: "+string(body))
+	}
 	return nil
 }
 
@@ -97,15 +101,30 @@ func TestMain(m *testing.M){
 func TestSelectInsert(t *testing.T){
 	var res IStrMap
 
-	valSel := engine.ValueSelection{Attr:"AttributeA", Op:"=", Value:"42"}
-	or := engine.Or{A: valSel, B: valSel}
-	queryStr, err := json.Marshal(or)
+
+	data := map[string]interface{}{
+		"AttributeA": 42,
+		"AttributeB": 42,
+	}
+
+	b, err := json.Marshal(data)
+	insArgs :=  map[string]string { "data": string(b) }
+	err = APICall("http://localhost:4210/api/choon/", "PUT", insArgs, &res)
+	if err != nil {
+		t.Fatalf("API Insert Error: %v", err)
+	}
+	
+
+	//valSel := engine.ValueSelection{Attr:"AttributeA", Op:"=", Value:"42"}
+	//or := engine.Or{A: valSel, B: valSel}
+	queryStr, err := json.Marshal(engine.Tautology{})
 	
 	t.Log("Query str: "+string(queryStr))
 	if err != nil {
 		t.Fatalf("Could not make create query string: %v", err)
 	}
-	args :=  map[string]string { "selection": string(queryStr), }
+	args :=  map[string]string { "selection": string(queryStr),
+		"query_type": "SELECT",}
 	
 
 	err = APICall("http://localhost:4210/api/choon/", "POST", args, &res)

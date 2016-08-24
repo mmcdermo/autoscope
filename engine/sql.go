@@ -57,6 +57,12 @@ func (t Tautology) validateSemantics(s *SchemaInfo) bool{
 	return true
 }
 
+func (t Tautology) MarshalJSON() (b []byte, err error) {
+    return json.Marshal(map[string]interface{}{
+			"type": "TAUTOLOGY",
+    })
+}
+
 //Function to determine if a given string is a valid SQL binary operation
 func ValidOp(s string) bool {
 	validOps := []string{"<", "<=", "=", "!=", ">=", ">", "LIKE"}
@@ -316,6 +322,8 @@ func FormulaFromJSON(b []byte) (formula Formula, err error) {
 		var valSel ValueSelection
 		err = json.Unmarshal(b, &valSel)
 		return valSel, err
+	} else if ty == "TAUTOLOGY" {
+		return Tautology{}, nil
 	}
 	return f, errors.New("Undefined formula type "+ty)
 }

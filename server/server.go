@@ -42,7 +42,10 @@ func InsertHandler(uid int64, w http.ResponseWriter, r *http.Request){
 		report_api_error(w, err, "Unable to parse data "+string(queryStr))
 		return
 	}
-	
+
+	fmt.Println("INSERT HANDLER "+obj)
+	fmt.Println(queryStr)
+	fmt.Println(mapA)
 	_, err = e.Insert(uid, engine.InsertQuery{
 		Table: obj,
 		Data: mapA,
@@ -80,13 +83,17 @@ func DeleteHandler(uid int64, w http.ResponseWriter, r *http.Request){
 func SelectHandler(uid int64, w http.ResponseWriter, r *http.Request){
 	vars := mux.Vars(r)
 	obj, ok := vars["object"]
+
 	if !ok {
 		report_api_error(w, errors.New("No object provided"), "No object provided")
 		return
 	}
 
 	selectionStr := r.FormValue("selection")
+	fmt.Println(selectionStr)	
 	sq := engine.SelectQuery{ Table: obj }
+
+
 	var err error
 	sq.Selection, err = engine.FormulaFromJSON([]byte(selectionStr))
 	if err != nil {
@@ -100,7 +107,6 @@ func SelectHandler(uid int64, w http.ResponseWriter, r *http.Request){
 		return
 	}
 
-	fmt.Println(res)
 	rows := make([]map[string]interface{}, 0)
 	for res.Next() {
 		m, err := res.Get()
