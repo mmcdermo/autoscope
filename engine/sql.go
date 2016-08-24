@@ -173,7 +173,7 @@ func (n *Not) FromJSON(b []byte) (err error){
 	}
 	f1, err := FormulaFromJSON(args[0])
 	if err != nil { return err }
-	n = &Not{ A: f1 }
+	n.A = f1
 	return nil
 }
 func (n Not) MarshalJSON() (b []byte, err error) {
@@ -217,7 +217,8 @@ func (o *Or) FromJSON(b []byte) (err error){
 	if err != nil { return err }
 	f2, err := FormulaFromJSON(args[1])
 	if err != nil { return err }
-	o = &Or{ A: f1, B: f2 }
+	o.A = f1
+	o.B = f2
 	return nil
 }
 func (o Or) MarshalJSON() (b []byte, err error) {
@@ -257,7 +258,8 @@ func (a *And) FromJSON(b []byte) (err error){
 	if err != nil { return err }
 	f2, err := FormulaFromJSON(args[1])
 	if err != nil { return err }
-	a = &And{ A: f1, B: f2 }
+	a.A = f1
+	a.B = f2
 	return nil
 }
 func (a And) MarshalJSON() (b []byte, err error) {

@@ -218,7 +218,7 @@ func (e *Engine) autoMigrate(){
 		if err != nil { log.Fatal(err.Error()) }
 		e.LoadSchema()
 	}
-	time.Sleep(10 * time.Second)
+	time.Sleep(60 * time.Second)
 
 	//Refresh stats
 	e.flushStatsToDB()

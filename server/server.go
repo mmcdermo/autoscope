@@ -4,13 +4,16 @@ import (
 	//"database/sql"
 	//	"time"
 	//	"strconv"
+
 	"encoding/json"
+	"errors"
 	"log"
 	"fmt"
 	"net/http"
 	"github.com/gorilla/mux"
 	"gopkg.in/yaml.v2"
 	"io/ioutil"
+	"strconv"
 	engine "github.com/mmcdermo/autoscope/engine"
 )
 
@@ -24,72 +27,178 @@ func report_api_error(w http.ResponseWriter, err error, user_error string){
 	log.Printf(err.Error())
 }
 
-func InsertHandler(w http.ResponseWriter, r *http.Request){
+func InsertHandler(uid int64, w http.ResponseWriter, r *http.Request){
+	vars := mux.Vars(r)
+	obj, ok := vars["object"]
+	if !ok {
+		report_api_error(w, errors.New("No object provided"), "No object provided")
+		return
+	}
 
-}
-func DeleteHandler(w http.ResponseWriter, r *http.Request){
-
-}
-
-func SelectHandler(w http.ResponseWriter, r *http.Request){
-	queryStr := r.FormValue("query")
-
+	queryStr := r.FormValue("data")
 	var mapA map[string]interface{}
 	err := json.Unmarshal([]byte(queryStr), &mapA)
 	if err != nil {
-		report_api_error(w, err, "Unable to parse query object "+string(queryStr))
+		report_api_error(w, err, "Unable to parse data "+string(queryStr))
+		return
+	}
+	
+	_, err = e.Insert(uid, engine.InsertQuery{
+		Table: obj,
+		Data: mapA,
+	})
+	if err != nil {
+		report_api_error(w, err, "Error performing query")
+		return
+	}
+}
+
+func UpdateHandler(uid int64, w http.ResponseWriter, r *http.Request){
+	/*queryStr := r.FormValue("query")
+	paramStr := r.FormValue("query")
+	vars := mux.Vars(r)
+
+	obj, ok := vars["object"]
+	if !ok {
+		report_api_error(w, errors.New("No object provided"), "No object provided")
+		return
+	}
+*/
+	//...
+}
+
+func DeleteHandler(uid int64, w http.ResponseWriter, r *http.Request){
+	vars := mux.Vars(r)
+	_, ok := vars["object"]
+	if !ok {
+		report_api_error(w, errors.New("No object provided"), "No object provided")
 		return
 	}
 
-	str, err := json.Marshal(mapA)
+}
 
-	var sq engine.SelectQuery
-	err = engine.UnmarshalSelectQuery(&sq, []byte(queryStr))
+func SelectHandler(uid int64, w http.ResponseWriter, r *http.Request){
+	vars := mux.Vars(r)
+	obj, ok := vars["object"]
+	if !ok {
+		report_api_error(w, errors.New("No object provided"), "No object provided")
+		return
+	}
 
+	selectionStr := r.FormValue("selection")
+	sq := engine.SelectQuery{ Table: obj }
+	var err error
+	sq.Selection, err = engine.FormulaFromJSON([]byte(selectionStr))
 	if err != nil {
-		report_api_error(w, err, "Unable to parse query "+string(str))
+		report_api_error(w, err, "Unable to parse query object "+selectionStr)
 		return
 	}
 	res, _, err := e.RawSelect(sq)
-	fmt.Fprintf(w, "%s", res)
+	if err != nil {
+		log.Println(err)
+		report_api_error(w, err, "SELECT Query Error")
+		return
+	}
+
+	fmt.Println(res)
+	rows := make([]map[string]interface{}, 0)
+	for res.Next() {
+		m, err := res.Get()
+		if err != nil {
+			fmt.Println(err)
+			report_api_error(w, err, "Result Query Error")
+			return
+		}
+		rows = append(rows, m)
+	}
+	fmt.Println(rows)
+	fmt.Println("^^ rows")
+	result := map[string]interface{}{
+		"rows": rows,
+	}
+	b, err := json.Marshal(result)
+	if err != nil {
+		report_api_error(w, err, "Result Query Error")
+		return
+	}
+	fmt.Fprintf(w, "%s", b)
 }
 
 func RESTHandler(w http.ResponseWriter, r *http.Request){
 	w.Header().Set("Content-Type", "application/json; charset=UTF-8")
 	w.WriteHeader(http.StatusOK)
 
+	var maxSessionLength int64 // (seconds)
+	maxSessionLength = 60 * 60
+	
+	uids, err := engine.RequireAuth(&e, r, maxSessionLength)
+	if err != nil {
+		report_api_error(w, err, "User not logged in or session expired.")
+		return
+	}
+	uid, err := strconv.ParseInt(uids, 10, 64)
+	if err != nil {
+		report_api_error(w, err, "Invalid User ID")
+		return
+	}
+	
 	if r.Method == "POST" {
 		queryType := r.FormValue("query_type")
 		if "SELECT" == queryType {
-			SelectHandler(w, r)
+			SelectHandler(uid, w, r)
+		} else if "UPDATE" == queryType {
+			UpdateHandler(uid, w, r)
 		}
 	} else if r.Method == "PUT" {
-		InsertHandler(w, r)
-	}	else if r.Method == "DELETE" {
-		DeleteHandler(w, r)
+		InsertHandler(uid, w, r)
+	} else if r.Method == "DELETE" {
+		DeleteHandler(uid, w, r)
 	} else {
 		//Assume GET as per http documentation
-		SelectHandler(w, r)
+		SelectHandler(uid, w, r)
 		//TODO: Make SelectHandler accept args for REST
 	}
 }
 
-func RunHTTPServer(port string) error{
-	r := mux.NewRouter()
+func LoginHandler(w http.ResponseWriter, r *http.Request){
+	w.Header().Set("Content-Type", "application/json; charset=UTF-8")
+	w.WriteHeader(http.StatusOK)
+	username := r.FormValue("username")
+	password := r.FormValue("password")
+
+	sessionId, err := engine.LoginAttempt(&e, username, password)
+	if err != nil {
+		report_api_error(w, err, "Error with login")
+		return
+	}
+	
+	s,_ := json.Marshal(map[string]string{"session_id": sessionId})
+	fmt.Fprintf(w, "%s", s)
+}
+
+func RunHTTPServer(port string, router *mux.Router) error{
+	var r *mux.Router
+	if router == nil {
+		r = mux.NewRouter()
+	} else {
+		r = router
+	}
+
+	r.HandleFunc("/api/login/", LoginHandler)
 	r.HandleFunc("/api/{object}/", RESTHandler)
 	http.Handle("/", r)
 	http.ListenAndServe(":"+port, nil)
 	return nil
 }
 
-func RunServer (defaultConfig *engine.Config) {
+func InitEngine(defaultConfig *engine.Config) (*engine.Engine, error){
 	config := engine.Config{}
 	if defaultConfig != nil {
 		log.Println("Using provided config object.")
 		config = *defaultConfig
 	} else {
 		log.Println("Loading config file.")
-
+		
 		contents, err := ioutil.ReadFile("autoscope.yml")
 		if err != nil {
 			log.Fatal("Failed to read config file.")
@@ -101,17 +210,20 @@ func RunServer (defaultConfig *engine.Config) {
 		}
 	}
 	log.Println("Loaded config file. Port is: "+config.Port)
-
-
-
 	
 	err := e.Init(&config)
 	if err != nil {
-		log.Fatalf("Engine Initialization Error: %v", err)
+		return nil, err
 	}
+	return &e, nil
 
-	err = RunHTTPServer(config.Port)
-
+}
+func RunServer (defaultConfig *engine.Config, router *mux.Router){
+	_, err := InitEngine(defaultConfig)
+	if err != nil {
+		log.Fatalf("Engine initialization error: %v", err)
+	}
+	err = RunHTTPServer(defaultConfig.Port, router)
 	if err != nil {
 		log.Fatalf("HTTP Server error: %v", err)
 	}

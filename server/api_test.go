@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/url"
 	"time"
+	"log"
 	"encoding/json"
 	"io/ioutil"
 	"errors"
@@ -21,12 +22,29 @@ func (strmap *StrMap) UnmarshalJSON(b []byte) (err error) {
 	return err
 }
 
+type IStrMap map[string]interface{} //Wrapper type for UnmarshalJSON
+func (strmap *IStrMap) UnmarshalJSON(b []byte) (err error) {
+	_map := make(map[string]interface{})
+	err = json.Unmarshal(b, &_map)
+	*strmap = _map
+	return err
+}
+
+var (
+	username string
+	sessionId string
+)
+
 func APICall(api_url string, method string, args map[string]string, obj json.Unmarshaler) error {
 	data := url.Values{}
 	for k, v := range args { data.Set(k, v) }
 	req, err := http.NewRequest(method, api_url, bytes.NewBufferString(data.Encode()))
 	req.Header.Add("Content-Length", strconv.Itoa(len(data.Encode())))
 	req.Header.Add("Content-Type","application/x-www-form-urlencoded")
+	if sessionId != "" {
+		req.Header.Add("X-User-Id", username)
+		req.Header.Add("X-Session-Id", sessionId)
+	}
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return err
@@ -46,26 +64,49 @@ func APICall(api_url string, method string, args map[string]string, obj json.Unm
 	return nil
 }
 
+func setupSession() (error) {
+	username = "test"
+	password := "test"
+	_, err := engine.CreateUser(&e, username, password)
+	if err != nil { return err }
+	
+	var res StrMap
+	err = APICall("http://localhost:4210/api/login/", "POST", map[string]string{
+		"username": username,
+		"password": password,
+	}, &res)
+	if err != nil {
+		return err
+	}
+	log.Println("Logion result")
+	log.Println(res)
+
+	sessionId = res["session_id"]
+	
+	return nil
+}
+
 func TestMain(m *testing.M){
-	go RunServer(nil)
+	go RunServer(&engine.Config{ Port: "4210", DatabaseType: "memdb" }, nil)
 	time.Sleep(250 * time.Millisecond)
+	err := setupSession()
+	if err != nil { log.Fatal(err.Error()) }
 	m.Run()
 }
 
-func TestOne(t *testing.T){
-	var res StrMap
+func TestSelectInsert(t *testing.T){
+	var res IStrMap
 
-	valSel := engine.ValueSelection{AttrA:"AttributeA", Op:"=", Value:"42"}
+	valSel := engine.ValueSelection{Attr:"AttributeA", Op:"=", Value:"42"}
 	or := engine.Or{A: valSel, B: valSel}
-	query := engine.SelectQuery{Table:"myTable", Selection:or}
-
-	queryStr, err := json.Marshal(query)
+	queryStr, err := json.Marshal(or)
+	
 	t.Log("Query str: "+string(queryStr))
 	if err != nil {
 		t.Fatalf("Could not make create query string: %v", err)
 	}
-	args :=  map[string]string { "query": string(queryStr),
-		"query_type": "SELECT", }
+	args :=  map[string]string { "selection": string(queryStr), }
+	
 
 	err = APICall("http://localhost:4210/api/choon/", "POST", args, &res)
 	if err != nil {
