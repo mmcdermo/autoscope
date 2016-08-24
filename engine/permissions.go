@@ -227,11 +227,16 @@ func GetTableGroups(e *Engine, tableName string) ([]int64, error){
 }
 
 func HasInsertPermissions(e *Engine, tableName string, userId int64) (bool, error) {
-	groups, err := GetTableGroups(e, tableName)
-	if err != nil { return false, err }
+	f := func(p Permissions) bool { return p.Insert }
+	
+	//Test permissions for non-existent group, to efficiently test for Everyone = true
+	if hasPermission(e, tableName, userId, -1, -1, f){
+		return true, nil
+	}
 
 	//Test permissions for each table-group
-	f := func(p Permissions) bool { return p.Insert }
+	groups, err := GetTableGroups(e, tableName)
+	if err != nil { return false, err }
 	for _, group := range groups {
 		if hasPermission(e, tableName, userId, -1, group, f){
 			return true, nil

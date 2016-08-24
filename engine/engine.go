@@ -381,6 +381,10 @@ func (e *Engine) Insert(userId int64, query InsertQuery) (ModificationResult, er
 	perms, err := HasInsertPermissions(e, query.Table, userId)
 	if err != nil { return nil, err }
 	if !perms {
+		log.Println("PERM ERRORS")
+		log.Println(e.Permissions)
+		log.Println(query)
+		log.Println(userId)
 		return nil, errors.New("User does not have permissions to insert into this table.")
 	}
 
