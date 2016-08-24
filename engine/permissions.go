@@ -174,6 +174,7 @@ func hasPermission(e *Engine, tableName string, userId int64, rowUID int64, rowG
 	
 	//Default to disallowing all actions in the absence of permissions	
 	if !ok { return false }
+	
 	if f(perms.Everyone) {
 		return true
 	} else if f(perms.Owner) && userId == rowUID {
