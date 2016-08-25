@@ -46,7 +46,7 @@ func InsertHandler(uid int64, w http.ResponseWriter, r *http.Request){
 	fmt.Println("INSERT HANDLER "+obj)
 	fmt.Println(queryStr)
 	fmt.Println(mapA)
-	_, err = e.Insert(uid, engine.InsertQuery{
+	res, err = e.Insert(uid, engine.InsertQuery{
 		Table: obj,
 		Data: mapA,
 	})
@@ -54,6 +54,17 @@ func InsertHandler(uid int64, w http.ResponseWriter, r *http.Request){
 		report_api_error(w, err, "Error performing query")
 		return
 	}
+
+	lii, err := res.LastInsertId()
+	if err != nil {
+		report_api_error(w, err, "Error performing query")
+		return
+	}
+	
+	z, err := json.Marshal(map[string]interface{}{"status": "success",
+		"inserted_id": lii,
+	})
+	fmt.Fprintf(w, "%s", z)
 }
 
 func UpdateHandler(uid int64, w http.ResponseWriter, r *http.Request){
