@@ -114,7 +114,6 @@ func TestMain(m *testing.M){
 func TestSelectInsert(t *testing.T){
 	var res IStrMap
 
-
 	data := map[string]interface{}{
 		"AttributeA": 42,
 		"AttributeB": 42,
@@ -126,7 +125,6 @@ func TestSelectInsert(t *testing.T){
 	if err != nil {
 		t.Fatalf("API Insert Error: %v", err)
 	}
-	
 
 	//valSel := engine.ValueSelection{Attr:"AttributeA", Op:"=", Value:"42"}
 	//or := engine.Or{A: valSel, B: valSel}

@@ -216,8 +216,18 @@ func (memDB *MemDB) Select(schema map[string]Table, prefixes map[string]Relation
 	t.Lock.Lock()
 	defer t.Lock.Unlock()
 
+
+	wildcard := false
+	switch query.Selection.(type) {
+	case Tautology:
+		wildcard = true
+	}
+	if query.Selection == nil {
+		wildcard = true
+	}
+	
 	for _, row := range memDB.Tables[query.Table].Rows {
-		if  query.Selection == nil || memDB.evalFormula(prefixes, row, query.Selection){
+		if  wildcard || memDB.evalFormula(prefixes, row, query.Selection){
 			r.Rows = append(r.Rows, row)
 		}
 	}

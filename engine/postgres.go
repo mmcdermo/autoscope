@@ -440,8 +440,17 @@ func RelationalQueryTransform(schema map[string]Table, prefixes map[string]Relat
 func (postgresDB *PostgresDB) Select(schema map[string]Table, prefixes map[string]RelationPath, query SelectQuery) (RetrievalResult, error) {
 	query.Table = strings.ToLower(query.Table)
 
-	//If there are no query criteria, we assume all rows are being requested
+	wildcard := false
+	switch query.Selection.(type) {
+	case Tautology:
+		wildcard = true
+	}
 	if query.Selection == nil {
+		wildcard = true
+	}
+	
+	//If there are no query criteria, we assume all rows are being requested
+	if wildcard {
 		queryStr := "SELECT * FROM " + escapeSQLIdent(query.Table)
 		rows, err := postgresDB.connection.Query(queryStr)
 		if err != nil {

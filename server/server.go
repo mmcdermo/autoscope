@@ -114,7 +114,8 @@ func SelectHandler(uid int64, w http.ResponseWriter, r *http.Request){
 		report_api_error(w, err, "SELECT Query Error")
 		return
 	}
-
+	fmt.Println("QUEARY")
+	fmt.Println(sq)
 	rows := make([]map[string]interface{}, 0)
 	for res.Next() {
 		m, err := res.Get()
