@@ -43,10 +43,7 @@ func InsertHandler(uid int64, w http.ResponseWriter, r *http.Request){
 		return
 	}
 
-	fmt.Println("INSERT HANDLER "+obj)
-	fmt.Println(queryStr)
-	fmt.Println(mapA)
-	res, err = e.Insert(uid, engine.InsertQuery{
+	res, err := e.Insert(uid, engine.InsertQuery{
 		Table: obj,
 		Data: mapA,
 	})
