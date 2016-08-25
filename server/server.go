@@ -65,17 +65,53 @@ func InsertHandler(uid int64, w http.ResponseWriter, r *http.Request){
 }
 
 func UpdateHandler(uid int64, w http.ResponseWriter, r *http.Request){
-	/*queryStr := r.FormValue("query")
-	paramStr := r.FormValue("query")
 	vars := mux.Vars(r)
 
+	//Get the object/table name
 	obj, ok := vars["object"]
 	if !ok {
 		report_api_error(w, errors.New("No object provided"), "No object provided")
 		return
 	}
-*/
-	//...
+
+	//Extract data from POST parameters
+	queryStr := r.FormValue("data")
+	var data map[string]interface{}
+	err := json.Unmarshal([]byte(queryStr), &data)
+	if err != nil {
+		report_api_error(w, err, "Unable to parse data "+string(queryStr))
+		return
+	}
+
+	//Extract selection parameters
+	selectionStr := r.FormValue("selection")
+	fmt.Println(selectionStr)	
+	uq := engine.UpdateQuery{ Table: obj, Data: data }
+	uq.Selection, err = engine.FormulaFromJSON([]byte(selectionStr))
+	if err != nil {
+		report_api_error(w, err, "Unable to parse query object "+selectionStr)
+		return
+	}
+
+	//Perform query
+	res, err := e.Update(uid, uq)
+	if err != nil {
+		log.Println(err)
+		report_api_error(w, err, "UPDATE Query Error")
+		return
+	}
+
+	//Output result
+	rowsAffected, err := res.RowsAffected()
+	if err != nil {
+		report_api_error(w, err, "Error performing query")
+		return
+	}
+	
+	z, err := json.Marshal(map[string]interface{}{"status": "success",
+		"rows_affected": rowsAffected,
+	})
+	fmt.Fprintf(w, "%s", z)
 }
 
 func DeleteHandler(uid int64, w http.ResponseWriter, r *http.Request){
@@ -98,7 +134,6 @@ func SelectHandler(uid int64, w http.ResponseWriter, r *http.Request){
 	}
 
 	selectionStr := r.FormValue("selection")
-	fmt.Println(selectionStr)	
 	sq := engine.SelectQuery{ Table: obj }
 
 
@@ -108,14 +143,13 @@ func SelectHandler(uid int64, w http.ResponseWriter, r *http.Request){
 		report_api_error(w, err, "Unable to parse query object "+selectionStr)
 		return
 	}
-	res, _, err := e.RawSelect(sq)
+	res, err := e.Select(uid, sq)
 	if err != nil {
 		log.Println(err)
 		report_api_error(w, err, "SELECT Query Error")
 		return
 	}
-	fmt.Println("QUEARY")
-	fmt.Println(sq)
+
 	rows := make([]map[string]interface{}, 0)
 	for res.Next() {
 		m, err := res.Get()
@@ -126,8 +160,7 @@ func SelectHandler(uid int64, w http.ResponseWriter, r *http.Request){
 		}
 		rows = append(rows, m)
 	}
-	fmt.Println(rows)
-	fmt.Println("^^ rows")
+
 	result := map[string]interface{}{
 		"rows": rows,
 	}

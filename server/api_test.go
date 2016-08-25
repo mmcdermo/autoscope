@@ -82,7 +82,7 @@ func setupSession() (error) {
 	if err != nil {
 		return err
 	}
-	log.Println("Logion result")
+	log.Println("Login result: ")
 	log.Println(res)
 
 	sessionId = res["session_id"]
@@ -111,14 +111,14 @@ func TestMain(m *testing.M){
 	m.Run()
 }
 
-func TestSelectInsert(t *testing.T){
+func TestInsertSelectUpdate(t *testing.T){
+	//Perform initial INSERT
+	
 	var res IStrMap
-
 	data := map[string]interface{}{
-		"AttributeA": 42,
-		"AttributeB": 42,
+		"AttributeA": 40,
+		"AttributeB": 40,
 	}
-
 	b, err := json.Marshal(data)
 	insArgs :=  map[string]string { "data": string(b) }
 	err = APICall("http://localhost:4210/api/choon/", "PUT", insArgs, &res)
@@ -126,22 +126,55 @@ func TestSelectInsert(t *testing.T){
 		t.Fatalf("API Insert Error: %v", err)
 	}
 
-	//valSel := engine.ValueSelection{Attr:"AttributeA", Op:"=", Value:"42"}
-	//or := engine.Or{A: valSel, B: valSel}
-	queryStr, err := json.Marshal(engine.Tautology{})
-	
+	//Perform SELECT following the INSERT
+	valSel := engine.ValueSelection{Attr:"AttributeA", Op:"=", Value:40}
+	or := engine.Or{A: valSel, B: valSel}
+	queryStr, err := json.Marshal(or)
 	t.Log("Query str: "+string(queryStr))
 	if err != nil {
 		t.Fatalf("Could not make create query string: %v", err)
 	}
 	args :=  map[string]string { "selection": string(queryStr),
 		"query_type": "SELECT",}
-	
-
 	err = APICall("http://localhost:4210/api/choon/", "POST", args, &res)
 	if err != nil {
 		t.Fatalf("API call failed: %v", err)
 	}
-	t.Log(res)
-	t.Fatal("Hello")
+	var resRows []interface{}
+	resRows = res["rows"].([]interface{})
+	if len(resRows) != 1 {
+		t.Fatal("Incorrect number of rows retrieved")
+	}
+
+	//PerformUpdate
+	updData := map[string]interface{}{ "AttributeA": 42 }
+	updDataStr, err := json.Marshal(updData)
+	if err != nil { t.Fatalf("JSON conversion failed: %v", err) }
+	args = map[string]string { "selection": string(queryStr),
+		"query_type": "UPDATE",
+		"data": string(updDataStr),
+	}
+	err = APICall("http://localhost:4210/api/choon/", "POST", args, &res)
+	if err != nil {
+		t.Fatalf("API call failed: %v", err)
+	}
+
+	//Perform selection again and ensure correct values
+	valSel = engine.ValueSelection{Attr:"AttributeA", Op:"=", Value:42}
+	queryStr, err = json.Marshal(valSel)
+	t.Log("Query str: "+string(queryStr))
+	if err != nil {
+		t.Fatalf("Could not make create query string: %v", err)
+	}
+	args =  map[string]string { "selection": string(queryStr),
+		"query_type": "SELECT",}
+	err = APICall("http://localhost:4210/api/choon/", "POST", args, &res)
+	if err != nil {
+		t.Fatalf("API call failed: %v", err)
+	}
+	
+	resRows = res["rows"].([]interface{})
+	if len(resRows) != 1 {
+		t.Fatal("Incorrect number of rows retrieved")
+	}
 }
