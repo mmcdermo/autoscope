@@ -9,6 +9,8 @@ type AutoscopeDB interface {
 	PerformMigration([]MigrationStep) error
 	CurrentSchema() (map[string]Table, error)
 	Select(map[string]Table, map[string]RelationPath, SelectQuery) (RetrievalResult, error)
+	//TODO
+	//Delete(map[string]Table, map[string]RelationPath, SelectQuery) (ModificationResult, error)
 	Insert(map[string]Table, InsertQuery) (ModificationResult, error)
 	Update(map[string]Table, map[string]RelationPath, UpdateQuery) (ModificationResult, error)
 	/*pseudoJoinWhere(map[string]Table, Formula) (bool, error)*/

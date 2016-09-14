@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"net/http"
 	"github.com/gorilla/mux"
+	"github.com/gorilla/handlers"
 	"gopkg.in/yaml.v2"
 	"io/ioutil"
 	"strconv"
@@ -21,10 +22,14 @@ var (
 	e engine.Engine
 )
 
-func report_api_error(w http.ResponseWriter, err error, user_error string){
+func report_api_error_code(w http.ResponseWriter, err error, user_error string, code int){
 	w.Header().Set("Content-Type", "text/json")
-	http.Error(w, "{\"error\": \"" + user_error + "--" + err.Error() + "\"}", 200)
+	http.Error(w, "{\"error\": \"" + user_error + "--" + err.Error() + "\"}", code)
 	log.Printf(err.Error())
+}
+
+func report_api_error(w http.ResponseWriter, err error, user_error string){
+	report_api_error_code(w, err, user_error, 200);
 }
 
 func InsertHandler(uid int64, w http.ResponseWriter, r *http.Request){
@@ -61,6 +66,7 @@ func InsertHandler(uid int64, w http.ResponseWriter, r *http.Request){
 	z, err := json.Marshal(map[string]interface{}{"status": "success",
 		"inserted_id": lii,
 	})
+	w.WriteHeader(http.StatusOK)	
 	fmt.Fprintf(w, "%s", z)
 }
 
@@ -111,10 +117,12 @@ func UpdateHandler(uid int64, w http.ResponseWriter, r *http.Request){
 	z, err := json.Marshal(map[string]interface{}{"status": "success",
 		"rows_affected": rowsAffected,
 	})
+	w.WriteHeader(http.StatusOK)	
 	fmt.Fprintf(w, "%s", z)
 }
 
 func DeleteHandler(uid int64, w http.ResponseWriter, r *http.Request){
+	//TODO
 	vars := mux.Vars(r)
 	_, ok := vars["object"]
 	if !ok {
@@ -169,12 +177,12 @@ func SelectHandler(uid int64, w http.ResponseWriter, r *http.Request){
 		report_api_error(w, err, "Result Query Error")
 		return
 	}
+	w.WriteHeader(http.StatusOK)	
 	fmt.Fprintf(w, "%s", b)
 }
 
 func RESTHandler(w http.ResponseWriter, r *http.Request){
 	w.Header().Set("Content-Type", "application/json; charset=UTF-8")
-	w.WriteHeader(http.StatusOK)
 
 	var maxSessionLength int64 // (seconds)
 	maxSessionLength = 60 * 60
@@ -210,17 +218,18 @@ func RESTHandler(w http.ResponseWriter, r *http.Request){
 
 func LoginHandler(w http.ResponseWriter, r *http.Request){
 	w.Header().Set("Content-Type", "application/json; charset=UTF-8")
-	w.WriteHeader(http.StatusOK)
+
 	username := r.FormValue("username")
 	password := r.FormValue("password")
 
 	sessionId, err := engine.LoginAttempt(&e, username, password)
 	if err != nil {
-		report_api_error(w, err, "Error with login")
+		report_api_error_code(w, err, "Error with login", 401)
 		return
 	}
 	
 	s,_ := json.Marshal(map[string]string{"session_id": sessionId})
+	w.WriteHeader(http.StatusOK)
 	fmt.Fprintf(w, "%s", s)
 }
 
@@ -234,8 +243,10 @@ func RunHTTPServer(port string, router *mux.Router) error{
 
 	r.HandleFunc("/api/login/", LoginHandler)
 	r.HandleFunc("/api/{object}/", RESTHandler)
-	http.Handle("/", r)
-	http.ListenAndServe(":"+port, nil)
+	//http.Handle("/", r)
+	log.Println("Running Autoscope HTTP API on port " + port)
+	http.ListenAndServe(":"+port, handlers.CORS()(r))
+	//http.ListenAndServe(":"+port, nil)
 	return nil
 }
 

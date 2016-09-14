@@ -1,4 +1,4 @@
-package main
+3package main
 
 import (
 	//"database/sql"
@@ -13,5 +13,5 @@ type Config struct {
 }
 
 func main(){
-	server.RunServer(nil)
+	server.RunServer(nil, nil)
 }
