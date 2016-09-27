@@ -106,6 +106,7 @@ func (postgresDB *PostgresDB) PerformMigration(steps []MigrationStep) error {
 func postgresColumnType(table Table, column string) string{
 	tyMap := map[string]string{
 		"json": "jsonb",
+		"string": "TEXT",
 	}
 	ty := table.Columns[column]
 	if postgresTy, ok := tyMap[ty]; ok {
@@ -123,6 +124,36 @@ func postgresConstraints(table Table, column string) string{
 	return ""
 }
 
+//Move all rows from an unassigned table to their proper location.
+//TODO: TEST this
+//TODO: Remove rows from autoscope_unassigned afterwards
+//TODO: Update unique ID foreign keys after transition
+// TODO: Make distributed, queued jobs to handle this. 
+func (postgresDB *PostgresDB) PromoteUnassigned(tableName string) error {
+	schema, err := postgresDB.CurrentSchema()
+	if err != nil { return err }
+	
+	prefixes := make(map[string]RelationPath, 0)
+	query := Filter("autoscope_unassigned", map[string]interface{}{
+		"table_name": tableName,
+	})
+
+	rows, err := postgresDB.Select(schema, prefixes, query)
+	if err != nil { return err }
+	
+	for rows.Next(){
+		res, err := rows.Get()
+		if err != nil { return err }
+		
+		_, err = postgresDB.Insert(schema, InsertQuery{
+			Table: tableName,
+			Data: res,
+		})
+		if err != nil { return err }
+	}
+	return nil
+}
+
 //Create a table in postgres
 // TODO: We must also copy over any data present in autoscope_unassigned
 func (postgresDB *PostgresDB) MigrationCreateTable(ct MigrationStepCreateTable) error {
@@ -132,26 +163,49 @@ func (postgresDB *PostgresDB) MigrationCreateTable(ct MigrationStepCreateTable) 
 		queryStr += " " + postgresColumnType(ct.table, column)
 		queryStr += " " + postgresConstraints(ct.table, column) + ",\n"
 	}
-	//Remove trailing comma
-	queryStr = queryStr[0: len(queryStr) - 2]
+	if len(ct.table.Columns) > 0 {
+		//Remove trailing comma
+		queryStr = queryStr[0: len(queryStr) - 2]
+	} 
 	queryStr += ");"
+	log.Println("MIGRATION: Creating table")
+	log.Println("\t "+queryStr)
 	_, err := postgresDB.connection.Exec(queryStr)
+	if err != nil { return err }
+
+	//postgresDB.PromoteUnassigned(ct.tableName)
 	return err
 }
 
 func (postgresDB *PostgresDB) MigrationPromoteField(pf MigrationStepPromoteField) error {
 	//First, create column in table
-	queryStr := "ALTER TABLE " + pf.tableName + " ADD COLUMN " + pf.column + " " + postgresColumnType(pf.table, pf.column) + " " + postgresConstraints(pf.table, pf.column)
-	_, err := postgresDB.connection.Exec(queryStr)
-	if err != nil {
-		return err
+	_, ok := pf.table.Columns[pf.column]
+	if pf.column == "" || !ok {
+		return errors.New("MigrationPromoteField: Empty column or no type for column '"+pf.column+"' in table '"+pf.table.Name+"'")
 	}
+	
+	queryStr := "ALTER TABLE " + pf.tableName + " ADD COLUMN " + pf.column + " " + postgresColumnType(pf.table, pf.column) + " " + postgresConstraints(pf.table, pf.column)
+	log.Println(queryStr)
+	_, err := postgresDB.connection.Exec(queryStr)
+	if err != nil {	return err }
 
+	schema, err := postgresDB.CurrentSchema()
+	if err != nil {	return err }
+	
 	//Second, perform the per-row promotion from object field to column
 	// For now, we do this inline. Eventually, we can perform this as a background
 	// batch job.
+
+	// If the table does not yet have autoscope_objectfields, we should only bring rows out
+	// from autoscope_unassigned, skipping this stage.
+	if _, ok := schema[pf.tableName].Columns["autoscope_objectfields"]; !ok {
+		//postgresDB.PromoteUnassigned(ct.tableName)
+		return nil
+	}
 	rows, err := postgresDB.connection.Query("SELECT id, autoscope_objectfields FROM " + pf.tableName + " WHERE autoscope_objectfields ->> "+jsonProp(pf.column)+" != '')")
-	defer rows.Close()
+	if err != nil {	return err }
+	
+	defer rows.Close()	
 	for rows.Next(){
 		//TODO: Needs testing. This appears to cause runtime panics occasionally. 
 		var jsonStr string
@@ -180,7 +234,7 @@ func (postgresDB *PostgresDB) MigrationPromoteField(pf MigrationStepPromoteField
 		queryStr += " \"" + pf.column + "\" = ?, "
 		queryStr += " autoscope_objectfields = ? "
 		queryStr += " WHERE id = ?"
-
+		log.Println(queryStr)
 		_, err = postgresDB.connection.Exec(queryStr, val, jsonStr, id)
 		if err != nil {
 			return err
@@ -452,6 +506,7 @@ func (postgresDB *PostgresDB) Select(schema map[string]Table, prefixes map[strin
 	//If there are no query criteria, we assume all rows are being requested
 	if wildcard {
 		queryStr := "SELECT * FROM " + escapeSQLIdent(query.Table)
+		log.Println(queryStr)
 		rows, err := postgresDB.connection.Query(queryStr)
 		if err != nil {
 			log.Println(err.Error())
@@ -523,16 +578,25 @@ func (postgresDB *PostgresDB) Select(schema map[string]Table, prefixes map[strin
 		//If the table we're coming from doesn't exist, we need to use
 		// (fromTablePrefix.data->>col)::int instead of fromTablePrefix.col
 		// since fromTablePrefix refers to autoscope_unassigned
-		fromTableSelection := path.FromTablePrefix + "." + path.FromField
+		var fromTableSelection string //  := path.FromTablePrefix + "." + path.FromField
+
+		_, columnExists := schema[path.FromTable].Columns[path.FromField]
+		_, hasObjectfieldsCol := schema[path.FromTable].Columns["autoscope_objectfields"]
+		
 		if _, ok := unassigned[path.FromTablePrefix]; ok {
 			fromTableSelection = path.FromTablePrefix + ".autoscope_objectfields->>" + jsonProp(path.FromField)
 			fromTableSelection = "(" + fromTableSelection + ")::int"
 
-		} else if _, ok := schema[path.FromTable].Columns[path.FromField]; !ok {
+		} else if hasObjectfieldsCol && !columnExists {
 			//If the table exists but the column doesn't, we need to access
 			// the autoscope_objectfields column
 			fromTableSelection = path.FromTablePrefix + ".autoscope_objectfields->>" + jsonProp(path.FromField)
 			fromTableSelection = "(" + fromTableSelection + ")::int"
+		} else {
+			// If autoscope_objectfields column also doesn't exist,
+			// we need to bail out and use the autoscope_unassigned table until
+			// it does. 
+			fromTableSelection = path.FromTablePrefix + "." + path.FromField
 		}
 
 		queryStr += "LEFT JOIN " + joinTable + " " + prefix
@@ -543,7 +607,9 @@ func (postgresDB *PostgresDB) Select(schema map[string]Table, prefixes map[strin
 	//Add WHERE clause
 	queryStr +=" WHERE " + whereClauseSQL
 
+
 	//Perform query
+	log.Println(queryStr)
 	rows, err := postgresDB.connection.Query(queryStr, whereClause.Args...)
 	if err != nil {
 		log.Println(err.Error())
@@ -558,9 +624,21 @@ func (postgresDB *PostgresDB) Insert(schema map[string]Table, query InsertQuery)
 	var r PostgresModificationResult
 	query.Table = strings.ToLower(query.Table)
 
+	hasAllColumns := true
+	for key, _ := range query.Data {
+		if _, ok := schema[query.Table].Columns[key]; !ok {
+			hasAllColumns = false
+		}
+	}
+	_, hasObjectfieldsCol := schema[query.Table].Columns["autoscope_objectfields"]
+	
 	//If the table given by `query` doesn't exist, we need to
 	// insert into autoscope_unassigned and create a new table_name value
-	if _, ok := schema[query.Table]; !ok {
+	//
+	// We also need to insert into autoscope_unassigned if the table exists, but
+	// the query inserts values that are not part of its schema, and it doesn't yet
+	// have an autoscope_objectfields column
+	if _, ok := schema[query.Table]; !ok || (!hasAllColumns && !hasObjectfieldsCol){
 		query.Data["table_name"] = query.Table
 		query = InsertQuery{
 			Table: "autoscope_unassigned",
@@ -608,6 +686,7 @@ func (postgresDB *PostgresDB) Insert(schema map[string]Table, query InsertQuery)
 	queryStr += " VALUES ("+ valueStr + jsonStr + ")"
 	queryStr += " RETURNING id"
 
+	log.Println(queryStr)
 	var id int64
 	err := postgresDB.connection.QueryRow(queryStr, values...).Scan(&id)
 	r.id = id
@@ -732,6 +811,7 @@ func (postgresDB *PostgresDB) Update(schema map[string]Table, prefixes map[strin
 	whereClauseSQL = questionToPositional(whereClauseSQL, len(values) + 1)
 	queryStr += " WHERE " + whereClauseSQL
 
+	log.Println(queryStr)
 	res, err := postgresDB.connection.Exec(queryStr, append(values, whereClause.Args...)...)
 	if err != nil { return r, err }
 	rowsAffected, err := res.RowsAffected()

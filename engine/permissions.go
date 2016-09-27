@@ -228,7 +228,13 @@ func GetTableGroups(e *Engine, tableName string) ([]int64, error){
 
 func HasInsertPermissions(e *Engine, tableName string, userId int64) (bool, error) {
 	f := func(p Permissions) bool { return p.Insert }
-	
+
+	//If the table doesn't yet exist, we need to check against the default permissions
+	perms := DefaultPermissions()
+	if perms.Owner.Insert == true {
+		return true, nil
+	}
+
 	//Test permissions for non-existent group, to efficiently test for Everyone = true
 	if hasPermission(e, tableName, userId, -1, -1, f){
 		return true, nil

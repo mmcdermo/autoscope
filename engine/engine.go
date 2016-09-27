@@ -183,10 +183,21 @@ func (e *Engine) MigrationFromStats() ([]MigrationStep, error){
 	for table, stats := range e.GlobalStats {
 		if _, ok := e.Schema[table]; !ok {
 			if stats.InsertQueries >= e.Config.NewTableRowsThreshhold {
+				//Determine initial columns for table creation
+				cols := make(map[string]string, 0)
+				for col, m := range stats.ObjectFieldCount {
+					maxTy := maxKey(m)
+					cols[col] = maxTy
+				}
+				newTable := AddDefaultFields(Table{
+					Name: table,
+					Columns: cols,
+				})
+				
+				//Create migration step
 				steps = append(steps, MigrationStepCreateTable{
 					tableName: table,
-					table: Table{Name: table},
-					//TODO: Efficiently include beginning columns
+					table: newTable,
 				})
 			}
 		}
@@ -211,19 +222,23 @@ func (e *Engine) autoMigrate(){
 	e.LoadSchema()
 	//TODO: Inter-node lock
 	migration, err := e.MigrationFromStats()
-	if err != nil { log.Fatal(err.Error()) }
-	if len(migration) > 0 {
+	if err != nil {
+		log.Println("Migration error: " + err.Error())
+	} else if len(migration) > 0 {
 		log.Println("Automatically performing migration...")
 		err = e.DB.PerformMigration(migration)
-		if err != nil { log.Fatal(err.Error()) }
+		if err != nil { log.Println("Migration error: " + err.Error()) }
 		e.LoadSchema()
 	}
-	time.Sleep(60 * time.Second)
-
+	
 	//Refresh stats
 	e.flushStatsToDB()
 	e.loadGlobalStats()
+	log.Println("Loaded global stats: ")
+	log.Println(e.GlobalStats)
 	
+	//TODO: Make interval customizable
+	time.Sleep(30 * time.Second)
 	e.autoMigrate()
 }
 
@@ -252,7 +267,11 @@ func (e *Engine) RawSelect(query SelectQuery) (RetrievalResult, map[string]Relat
 func (e *Engine) Select(userId int64, query SelectQuery) (RetrievalResult, error){
 	//Modify query to encapsulate necessary permissions
 	perms, ok := e.GetTablePermissions(query.Table)
-	if !ok { return nil, errors.New("No permissions for table "+query.Table) }
+	
+	//Use default permissions if no permissions exist
+	//if !ok { return nil, errors.New("No permissions for table "+query.Table) }
+	if !ok { perms = DefaultPermissions() }
+
 	groups, err := UserGroups(e, userId)
 	if err != nil { return nil, err }
 	sel, allow := AddPermissionsToSelection(query.Selection,
@@ -267,13 +286,13 @@ func (e *Engine) Select(userId int64, query SelectQuery) (RetrievalResult, error
 	r, prefixes, err := e.RawSelect(query)
 
 	//Update global stats
-	e.GlobalStatsLock.Lock()
-	stats := e.GlobalStats[query.Table]
+	e.LocalStatsLock.Lock()
+	stats := e.LocalStats[query.Table]
 	//Update UpdateQueries stats
 	stats.SelectQueries += 1
 	//Update restriction stats
 	for _, prefix := range prefixes {
-		tstats, ok := e.GlobalStats[prefix.FromTable]
+		tstats, ok := e.LocalStats[prefix.FromTable]
 		if !ok {
 			tstats = defStats()
 		}
@@ -282,10 +301,10 @@ func (e *Engine) Select(userId int64, query SelectQuery) (RetrievalResult, error
 			tstats.Restrictions[prefix.FromField] = 0
 		}
 		tstats.Restrictions[prefix.FromField] += 1
-		e.GlobalStats[prefix.FromTable] = tstats
+		e.LocalStats[prefix.FromTable] = tstats
 	}
-	e.GlobalStats[query.Table] = stats
-	e.GlobalStatsLock.Unlock()
+	e.LocalStats[query.Table] = stats
+	e.LocalStatsLock.Unlock()
 
 	return r, err
 }
@@ -315,7 +334,11 @@ func (e *Engine) RawUpdate(query UpdateQuery) (ModificationResult, map[string]Re
 func (e *Engine) Update(userId int64, query UpdateQuery) (ModificationResult, error){
 	//Modify query to include security checks
 	perms, ok := e.GetTablePermissions(query.Table)
-	if !ok { return nil, errors.New("No permissions for table "+query.Table) }
+
+	//Use default permissions if no permissions exist
+	//if !ok { return nil, errors.New("No permissions for table "+query.Table) }
+	if !ok { perms = DefaultPermissions() }
+
 	groups, err := UserGroups(e, userId)
 	if err != nil { return nil, err }
 	sel, allow := AddPermissionsToSelection(query.Selection,
@@ -328,8 +351,8 @@ func (e *Engine) Update(userId int64, query UpdateQuery) (ModificationResult, er
 	r, prefixes, err := e.RawUpdate(query)
 
 	//Update global stats
-	e.GlobalStatsLock.Lock()
-	stats := e.GlobalStats[query.Table]
+	e.LocalStatsLock.Lock()
+	stats := e.LocalStats[query.Table]
 	//Update UpdateQueries stats
 	stats.UpdateQueries += 1
 	//Update foreign key stats
@@ -344,7 +367,7 @@ func (e *Engine) Update(userId int64, query UpdateQuery) (ModificationResult, er
 	}
 	//Update restriction stats
 	for _, prefix := range prefixes {
-		tstats, ok := e.GlobalStats[prefix.FromTable]
+		tstats, ok := e.LocalStats[prefix.FromTable]
 		if !ok {
 			tstats = defStats()
 		}
@@ -353,10 +376,10 @@ func (e *Engine) Update(userId int64, query UpdateQuery) (ModificationResult, er
 			tstats.Restrictions[prefix.FromField] = 0
 		}
 		tstats.Restrictions[prefix.FromField] += 1
-		e.GlobalStats[prefix.FromTable] = tstats
+		e.LocalStats[prefix.FromTable] = tstats
 	}
-	e.GlobalStats[query.Table] = stats
-	e.GlobalStatsLock.Unlock()
+	e.LocalStats[query.Table] = stats
+	e.LocalStatsLock.Unlock()
 	return r, err
 }
 
@@ -393,8 +416,8 @@ func (e *Engine) Insert(userId int64, query InsertQuery) (ModificationResult, er
 	
 	r, err := e.RawInsert(query)
 
-	e.GlobalStatsLock.Lock()
-	stats := e.GlobalStats[query.Table]
+	e.LocalStatsLock.Lock()
+	stats := e.LocalStats[query.Table]
 	//Update InsertQueries stats
 	stats.InsertQueries += 1
 	//Update foreign key stats
@@ -407,8 +430,8 @@ func (e *Engine) Insert(userId int64, query InsertQuery) (ModificationResult, er
 		ty := TypeFromValue(v)
 		stats.ObjectFieldCount = incrementCountMap(stats.ObjectFieldCount, k, ty)
 	}
-	e.GlobalStats[query.Table] = stats
-	e.GlobalStatsLock.Unlock()
+	e.LocalStats[query.Table] = stats
+	e.LocalStatsLock.Unlock()
 
 	return r, err
 }
@@ -503,7 +526,7 @@ func (e *Engine) loadGlobalStats() error {
 //Flushes our local stats to the database, zeroing them as it goes
 func (e *Engine) flushStatsToDB() error {
 	// TODO: Obtain inter-node lock on query stat updates
-
+	log.Println("Flushing stats to DB")
 	e.LocalStatsLock.Lock()
 	defer e.LocalStatsLock.Unlock()
 	for table, stats := range e.LocalStats {

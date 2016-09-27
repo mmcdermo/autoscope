@@ -30,17 +30,17 @@ type ColumnInfo struct {
 //Struct representing the state of a table
 type Table struct {
 	//Name of the table, as stored in the database
-	Name string `yaml:"name,omitempty"`
+	Name string `yaml:"name,omitempty" json:"name,omitempty"`
 	//Column name -> column info string
-	Columns map[string]string `yaml:"columns,omitempty"`
+	Columns map[string]string `yaml:"columns,omitempty" json:"columns,omitempty"`
 	//Top N used non-column object fields
-	ObjectFields map[string]string `yaml:"object_fields,omitempty"`
+	ObjectFields map[string]string `yaml:"object_fields,omitempty" json:"object_fields,omitempty"`
 	//Names of indexed columns
-	Indices []string `yaml:"indices,omitempty"`
+	Indices []string `yaml:"indices,omitempty" json:"indices,omitempty"`
 	//Table name aliases. Permits legacy code to reference other table names
-	Aliases []string `yaml:"aliases,omitempty"`
+	Aliases []string `yaml:"aliases,omitempty" json:"aliases,omitempty"`
 	//Status of the table: live, migrating or blank (doesn't yet exist)
-	Status string `yaml:"status,omitempty"`
+	Status string `yaml:"status,omitempty" json:"status,omitempty"`
 }
 
 
@@ -292,6 +292,7 @@ func AddDefaultFields(t Table) Table {
 	t.Columns["id"] = "serial"
 	t.Columns["autoscope_uid"] = "bigint"
 	t.Columns["autoscope_gid"] = "bigint"
+	t.Columns["autoscope_objectfields"] = "json"
 	return t
 }
 

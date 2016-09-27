@@ -40,9 +40,9 @@ tables:
   autoscope_table_stats:
     columns:
       table_name: varchar(128)
-      insert_queries: varchar(128)
-      select_queries: varchar(128)
-      update_queries: varchar(128)
+      insert_queries: bigint
+      select_queries: bigint
+      update_queries: bigint
     indices:
       - table_name
   autoscope_restriction_stats:

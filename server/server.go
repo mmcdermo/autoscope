@@ -29,7 +29,7 @@ func report_api_error_code(w http.ResponseWriter, err error, user_error string, 
 }
 
 func report_api_error(w http.ResponseWriter, err error, user_error string){
-	report_api_error_code(w, err, user_error, 200);
+	report_api_error_code(w, err, user_error, 400);
 }
 
 func InsertHandler(uid int64, w http.ResponseWriter, r *http.Request){
@@ -189,7 +189,7 @@ func RESTHandler(w http.ResponseWriter, r *http.Request){
 	
 	uids, err := engine.RequireAuth(&e, r, maxSessionLength)
 	if err != nil {
-		report_api_error(w, err, "User not logged in or session expired.")
+		report_api_error_code(w, err, "User not logged in or session expired.", 403)
 		return
 	}
 	uid, err := strconv.ParseInt(uids, 10, 64)
@@ -233,6 +233,52 @@ func LoginHandler(w http.ResponseWriter, r *http.Request){
 	fmt.Fprintf(w, "%s", s)
 }
 
+func SchemaHandler(w http.ResponseWriter, r *http.Request){
+	var maxSessionLength int64 // (seconds)
+	maxSessionLength = 60 * 60
+
+	_, err := engine.RequireAuth(&e, r, maxSessionLength)
+	if err != nil {
+		report_api_error_code(w, err, "User not logged in or session expired.", 403)
+		return
+	}
+
+	if &e == nil {
+		report_api_error_code(w, err, "No engine configured.", 500)
+		return
+	}
+	
+	//TODO: SECURITY
+	schema := e.Schema
+	s,_ := json.Marshal(schema)
+	w.Header().Set("Content-Type", "application/json; charset=UTF-8")
+	w.WriteHeader(http.StatusOK)
+	fmt.Fprintf(w, "%s", s)
+}
+
+func StatsHandler(w http.ResponseWriter, r *http.Request){
+	var maxSessionLength int64 // (seconds)
+	maxSessionLength = 60 * 60
+
+	_, err := engine.RequireAuth(&e, r, maxSessionLength)
+	if err != nil {
+		report_api_error_code(w, err, "User not logged in or session expired.", 403)
+		return
+	}
+
+	if &e == nil {
+		report_api_error_code(w, err, "No engine configured.", 500)
+		return
+	}
+
+	//TODO: SECURITY
+	stats := e.GlobalStats
+	s,_ := json.Marshal(stats)
+	w.Header().Set("Content-Type", "application/json; charset=UTF-8")
+	w.WriteHeader(http.StatusOK)
+	fmt.Fprintf(w, "%s", s)
+}
+
 func RunHTTPServer(port string, router *mux.Router) error{
 	var r *mux.Router
 	if router == nil {
@@ -241,7 +287,9 @@ func RunHTTPServer(port string, router *mux.Router) error{
 		r = router
 	}
 
-	r.HandleFunc("/api/login/", LoginHandler)
+	r.HandleFunc("/asapi/schema/", SchemaHandler)
+	r.HandleFunc("/asapi/stats/", StatsHandler)
+	r.HandleFunc("/asapi/login/", LoginHandler)
 	r.HandleFunc("/api/{object}/", RESTHandler)
 	//http.Handle("/", r)
 	log.Println("Running Autoscope HTTP API on port " + port)
