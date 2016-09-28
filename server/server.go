@@ -122,15 +122,42 @@ func UpdateHandler(uid int64, w http.ResponseWriter, r *http.Request){
 }
 
 func DeleteHandler(uid int64, w http.ResponseWriter, r *http.Request){
-	//TODO
 	vars := mux.Vars(r)
-	_, ok := vars["object"]
+	obj, ok := vars["object"]
+
 	if !ok {
 		report_api_error(w, errors.New("No object provided"), "No object provided")
 		return
 	}
 
+	selectionStr := r.FormValue("selection")
+	sq := engine.SelectQuery{ Table: obj }
+
+	var err error
+	sq.Selection, err = engine.FormulaFromJSON([]byte(selectionStr))
+	if err != nil {
+		report_api_error(w, err, "Unable to parse query object "+selectionStr)
+		return
+	}
+	res, err := e.Delete(uid, sq)
+	if err != nil {
+		log.Println(err)
+		report_api_error(w, err, "DELETE Query Error")
+		return
+	}
+
+	result := map[string]interface{}{
+		"rows_affected": res.RowsAffected,
+	}
+	b, err := json.Marshal(result)
+	if err != nil {
+		report_api_error(w, err, "Result Query Error")
+		return
+	}
+	w.WriteHeader(http.StatusOK)	
+	fmt.Fprintf(w, "%s", b)
 }
+
 
 func SelectHandler(uid int64, w http.ResponseWriter, r *http.Request){
 	vars := mux.Vars(r)

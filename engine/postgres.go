@@ -489,9 +489,8 @@ func RelationalQueryTransform(schema map[string]Table, prefixes map[string]Relat
 	return query
 }
 
-//Perform a select query on the postgres database using relational filtering
-// (e.g. event__venue__owner = "Jim")
-func (postgresDB *PostgresDB) Select(schema map[string]Table, prefixes map[string]RelationPath, query SelectQuery) (RetrievalResult, error) {
+//Internal function to generate a where clause for a SELECT, DELETE, or UPDATE
+func (postgresDB *PostgresDB) generateWhere(schema map[string]Table, prefixes map[string]RelationPath, query SelectQuery) (string, SQLPart, error) {
 	query.Table = strings.ToLower(query.Table)
 
 	wildcard := false
@@ -505,14 +504,8 @@ func (postgresDB *PostgresDB) Select(schema map[string]Table, prefixes map[strin
 	
 	//If there are no query criteria, we assume all rows are being requested
 	if wildcard {
-		queryStr := "SELECT * FROM " + escapeSQLIdent(query.Table)
-		log.Println(queryStr)
-		rows, err := postgresDB.connection.Query(queryStr)
-		if err != nil {
-			log.Println(err.Error())
-			return nil, err
-		}
-		return PostgresRetrievalResult{ Rows: rows, Table: schema[query.Table] }, nil
+		log.Println("Wildcard search. Not generating any SQL")
+		return "", SQLPart{}, nil
 	}
 
 	//If the table given by `query` doesn't exist, we need to
@@ -526,8 +519,7 @@ func (postgresDB *PostgresDB) Select(schema map[string]Table, prefixes map[strin
 		query.Table = "autoscope_unassigned"
 	}
 
-	//Start our query
-	queryStr := "SELECT __root.* FROM " + query.Table + " __root\n"
+	queryStr := ""
 
 	//Transform our attribute names appropriately where necessary
 	transformed := RelationalQueryTransform(schema, prefixes, query)
@@ -535,7 +527,8 @@ func (postgresDB *PostgresDB) Select(schema map[string]Table, prefixes map[strin
 	//Generate the WHERE clause
 	whereClause, err := transformed.Selection.toSQL()
 	if err != nil {
-		return nil, err
+		log.Println("Error generating where clause: "+err.Error())
+		return "", SQLPart{}, err
 	}
 
 	//Replace identifiers
@@ -603,10 +596,29 @@ func (postgresDB *PostgresDB) Select(schema map[string]Table, prefixes map[strin
 		queryStr += " on " + fromTableSelection + " = " + prefix + ".id"
 		queryStr += " " + additionalRestrictions + "\n"
 	}
+	log.Println("Generating where clause: "+queryStr)
+	log.Println(whereClause)
+	return queryStr, whereClause, nil
+}	
+	
+//Perform a select query on the postgres database using relational filtering
+// (e.g. event__venue__owner = "Jim")
+func (postgresDB *PostgresDB) Select(schema map[string]Table, prefixes map[string]RelationPath, query SelectQuery) (RetrievalResult, error) {
+	//Generate query
+	joinSQL, whereClause, err := postgresDB.generateWhere(schema, prefixes, query)
+	if err != nil { return nil, err }
+	queryStr := "SELECT __root.* FROM " + query.Table + " __root\n" + joinSQL
 
-	//Add WHERE clause
-	queryStr +=" WHERE " + whereClauseSQL
+	//Replace identifiers
+	whereClauseSQL := replaceIdentifiers(whereClause.SQL, whereClause.Idents)
 
+	//Replace ?s with $1s
+	whereClauseSQL = questionToPositional(whereClauseSQL, 1)
+
+	//Only append WHERE ... if there's a nonempty clause
+	if whereClauseSQL != "" {
+		queryStr += "WHERE " + whereClauseSQL
+	}
 
 	//Perform query
 	log.Println(queryStr)
@@ -618,6 +630,38 @@ func (postgresDB *PostgresDB) Select(schema map[string]Table, prefixes map[strin
 
 	return PostgresRetrievalResult{ Rows: rows, Table: schema[query.Table] }, nil
 }
+
+
+//Perform a select query on the postgres database using relational filtering
+// (e.g. event__venue__owner = "Jim")
+func (postgresDB *PostgresDB) Delete(schema map[string]Table, prefixes map[string]RelationPath, query SelectQuery) (ModificationResult, error) {
+	//Generate query
+	joinSQL, whereClause, err := postgresDB.generateWhere(schema, prefixes, query)
+	if err != nil { return nil, err }
+	queryStr := "DELETE FROM " + query.Table + " __root\n" + joinSQL
+
+	//Replace identifiers
+	whereClauseSQL := replaceIdentifiers(whereClause.SQL, whereClause.Idents)
+
+	//Replace ?s with $1s
+	whereClauseSQL = questionToPositional(whereClauseSQL, 1)
+
+	//Only append "WHERE ..." if clause exists, otherwise omit => wildcard
+	if whereClauseSQL != "" {
+		queryStr += "WHERE " + whereClauseSQL
+	}
+	
+	//Perform query
+	log.Println(queryStr)
+	res, err := postgresDB.connection.Exec(queryStr, whereClause.Args...)
+	if err != nil {
+		return nil, err
+	}
+	rowsAffected, err := res.RowsAffected()
+
+	return PostgresModificationResult{ rowsAffected: rowsAffected }, nil
+}
+
 
 //Perform an insert query on the postgres database
 func (postgresDB *PostgresDB) Insert(schema map[string]Table, query InsertQuery) (ModificationResult, error) {

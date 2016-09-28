@@ -79,6 +79,8 @@ type TableQueryStats struct {
 	SelectQueries int64
 	//Number of update queries observed on this table
 	UpdateQueries int64
+	//Number of delete queries observed on this table
+	DeleteQueries int64
 	//Map from cols/object-fields -> number of queries with field as restriction
 	// TODO: Use combinations of object fields as keys (for composite indices)
 	Restrictions map[string]int64
@@ -290,6 +292,66 @@ func (e *Engine) Select(userId int64, query SelectQuery) (RetrievalResult, error
 	stats := e.LocalStats[query.Table]
 	//Update UpdateQueries stats
 	stats.SelectQueries += 1
+	//Update restriction stats
+	for _, prefix := range prefixes {
+		tstats, ok := e.LocalStats[prefix.FromTable]
+		if !ok {
+			tstats = defStats()
+		}
+
+		if _, ok := tstats.Restrictions[prefix.FromField]; !ok {
+			tstats.Restrictions[prefix.FromField] = 0
+		}
+		tstats.Restrictions[prefix.FromField] += 1
+		e.LocalStats[prefix.FromTable] = tstats
+	}
+	e.LocalStats[query.Table] = stats
+	e.LocalStatsLock.Unlock()
+
+	return r, err
+}
+
+func (e *Engine) RawDelete(query SelectQuery) (ModificationResult, map[string]RelationPath, error){
+	e.SchemaLock.RLock()
+	defer e.SchemaLock.RUnlock()
+
+	e.GlobalStatsLock.RLock()
+	prefixes, err := genPrefixes(e.Schema, e.GlobalStats, query.Table, query.Selection)
+	e.GlobalStatsLock.RUnlock()
+	if err != nil { return nil, prefixes, err }
+
+	r, err := e.DB.Delete(e.Schema, prefixes, query)
+	return r, prefixes, err
+}
+
+
+//Perform a DELETE query using the engine
+func (e *Engine) Delete(userId int64, query SelectQuery) (ModificationResult, error){
+	//Modify query to encapsulate necessary permissions
+	perms, ok := e.GetTablePermissions(query.Table)
+	
+	//Use default permissions if no permissions exist
+	//if !ok { return nil, errors.New("No permissions for table "+query.Table) }
+	if !ok { perms = DefaultPermissions() }
+
+	groups, err := UserGroups(e, userId)
+	if err != nil { return nil, err }
+	sel, allow := AddPermissionsToSelection(query.Selection,
+		perms, userId, groups, UpdateAction)
+	if !allow {
+		log.Println("Denying DELETE query due to restrictive permissions")
+		return EmptyModificationResult{}, nil
+	}
+	query.Selection = sel
+
+	//Perform query
+	r, prefixes, err := e.RawDelete(query)
+
+	//Update global stats
+	e.LocalStatsLock.Lock()
+	stats := e.LocalStats[query.Table]
+	//Update UpdateQueries stats
+	stats.DeleteQueries += 1
 	//Update restriction stats
 	for _, prefix := range prefixes {
 		tstats, ok := e.LocalStats[prefix.FromTable]

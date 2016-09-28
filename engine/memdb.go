@@ -234,6 +234,43 @@ func (memDB *MemDB) Select(schema map[string]Table, prefixes map[string]Relation
 	return &r, nil
 }
 
+
+//Select a row from the memDB.
+// For now, we will just perform a linear scan on the table
+func (memDB *MemDB) Delete(schema map[string]Table, prefixes map[string]RelationPath, query SelectQuery) (ModificationResult, error) {
+	var r MemDBModificationResult
+	
+	memDB.TableLock.RLock()
+	defer memDB.TableLock.RUnlock()
+	if _, ok := memDB.Tables[query.Table]; !ok {
+		return nil, nil
+	}
+
+	t := memDB.Tables[query.Table]
+	t.Lock.Lock()
+	defer t.Lock.Unlock()
+
+	wildcard := false
+	switch query.Selection.(type) {
+	case Tautology:
+		wildcard = true
+	}
+	if query.Selection == nil {
+		wildcard = true
+	}
+
+	deleted := 0
+	for idx, row := range memDB.Tables[query.Table].Rows {
+		if  wildcard || memDB.evalFormula(prefixes, row, query.Selection){
+			delete(memDB.Tables[query.Table].Rows, idx)
+			deleted = deleted + 1
+		}
+	}
+
+	r.rowsAffected = int64(deleted)
+	return &r, nil
+}
+
 func (memDB *MemDB) Insert(schema map[string]Table, query InsertQuery) (ModificationResult, error) {
 	var r MemDBModificationResult
 
